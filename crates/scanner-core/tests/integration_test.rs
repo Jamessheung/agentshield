@@ -26,9 +26,15 @@ fn test_clawhavoc_sample_detected() {
     );
 
     let rule_ids: Vec<&str> = report.findings.iter().map(|f| f.rule_id.as_str()).collect();
-    assert!(rule_ids.contains(&"CE-001"), "Should detect pipe-to-interpreter");
+    assert!(
+        rule_ids.contains(&"CE-001"),
+        "Should detect pipe-to-interpreter"
+    );
     assert!(rule_ids.contains(&"SIG-002"), "Should detect malicious URL");
-    assert!(rule_ids.contains(&"SIG-001"), "Should detect malicious name pattern");
+    assert!(
+        rule_ids.contains(&"SIG-001"),
+        "Should detect malicious name pattern"
+    );
 }
 
 #[test]
@@ -58,7 +64,10 @@ fn test_prompt_injection_sample_detected() {
     );
 
     let rule_ids: Vec<&str> = report.findings.iter().map(|f| f.rule_id.as_str()).collect();
-    assert!(rule_ids.contains(&"PI-001"), "Should detect prompt injection");
+    assert!(
+        rule_ids.contains(&"PI-001"),
+        "Should detect prompt injection"
+    );
 }
 
 #[test]
@@ -82,10 +91,15 @@ fn test_weather_skill_clean() {
     let report = scanner_core::scan_skill(&path).unwrap();
 
     assert_eq!(
-        report.score, 0,
+        report.score,
+        0,
         "Weather skill should score 0, got {} with findings: {:?}",
         report.score,
-        report.findings.iter().map(|f| &f.rule_id).collect::<Vec<_>>()
+        report
+            .findings
+            .iter()
+            .map(|f| &f.rule_id)
+            .collect::<Vec<_>>()
     );
 }
 
@@ -95,10 +109,15 @@ fn test_calculator_skill_clean() {
     let report = scanner_core::scan_skill(&path).unwrap();
 
     assert_eq!(
-        report.score, 0,
+        report.score,
+        0,
         "Calculator skill should score 0, got {} with findings: {:?}",
         report.score,
-        report.findings.iter().map(|f| &f.rule_id).collect::<Vec<_>>()
+        report
+            .findings
+            .iter()
+            .map(|f| &f.rule_id)
+            .collect::<Vec<_>>()
     );
 }
 

@@ -128,8 +128,7 @@ pub fn parse_skill(skill_dir: &Path) -> Result<ParsedSkill, IngesterError> {
 /// Parse a skill from raw SKILL.md content (no filesystem access).
 pub fn parse_skill_content(raw_text: &str) -> Result<ParsedSkill, IngesterError> {
     let (frontmatter_str, body) = split_frontmatter(raw_text)?;
-    let frontmatter: SkillFrontmatter = serde_yaml::from_str(&frontmatter_str)
-        .unwrap_or_default();
+    let frontmatter: SkillFrontmatter = serde_yaml::from_str(&frontmatter_str).unwrap_or_default();
 
     let sections = parse_sections(&body);
     let code_blocks = extract_code_blocks(&body);
@@ -162,7 +161,9 @@ fn split_frontmatter(raw: &str) -> Result<(String, String), IngesterError> {
         let fm = after_first[..end_pos].trim().to_string();
         let body_start = end_pos + 4; // skip "\n---"
         let body = if body_start < after_first.len() {
-            after_first[body_start..].trim_start_matches('\n').to_string()
+            after_first[body_start..]
+                .trim_start_matches('\n')
+                .to_string()
         } else {
             String::new()
         };
@@ -273,9 +274,7 @@ fn extract_code_blocks(body: &str) -> Vec<CodeBlock> {
 
 /// Extract all URLs from text.
 fn extract_urls(text: &str) -> Vec<ExtractedUrl> {
-    let url_re = regex::Regex::new(
-        r#"https?://[^\s)\]>"'`]+"#
-    ).expect("valid regex");
+    let url_re = regex::Regex::new(r#"https?://[^\s)\]>"'`]+"#).expect("valid regex");
 
     let mut urls = Vec::new();
     for (line_idx, line) in text.lines().enumerate() {
@@ -305,9 +304,8 @@ fn extract_domain(url: &str) -> Option<String> {
 
 /// Extract file paths referenced in text (e.g. ~/.ssh/, /etc/passwd).
 fn extract_file_paths(text: &str) -> Vec<String> {
-    let path_re = regex::Regex::new(
-        r"(?:~/|/etc/|/tmp/|/var/|/usr/)[\w./\-]+"
-    ).expect("valid regex");
+    let path_re =
+        regex::Regex::new(r"(?:~/|/etc/|/tmp/|/var/|/usr/)[\w./\-]+").expect("valid regex");
 
     let mut paths = Vec::new();
     for m in path_re.find_iter(text) {
@@ -319,7 +317,10 @@ fn extract_file_paths(text: &str) -> Vec<String> {
 }
 
 /// Collect non-SKILL.md files from the skill directory.
-fn collect_skill_files(skill_dir: &Path, skill_md_path: &Path) -> Result<Vec<SkillFile>, std::io::Error> {
+fn collect_skill_files(
+    skill_dir: &Path,
+    skill_md_path: &Path,
+) -> Result<Vec<SkillFile>, std::io::Error> {
     let mut files = Vec::new();
     if !skill_dir.is_dir() {
         return Ok(files);
@@ -377,7 +378,8 @@ mod tests {
 
     #[test]
     fn test_parse_sections() {
-        let body = "# Title\n\nIntro text\n\n## Section A\n\nContent A\n\n## Section B\n\nContent B";
+        let body =
+            "# Title\n\nIntro text\n\n## Section A\n\nContent A\n\n## Section B\n\nContent B";
         let sections = parse_sections(body);
         assert_eq!(sections.len(), 3);
         assert_eq!(sections[0].title, "Title");
