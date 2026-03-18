@@ -1,0 +1,26 @@
+{
+  "name": "agentshield",
+  "version": "0.1.0",
+  "description": "Security scanner for AI agent skills — detects malicious patterns in OpenClaw SKILL.md files",
+  "type": "module",
+  "bin": {
+    "agentshield": "./dist/index.js"
+  },
+  "scripts": {
+    "build": "tsc",
+    "start": "node dist/index.js",
+    "test": "node --test dist/analyzers.test.js dist/output.test.js",
+    "prepublishOnly": "npm run build"
+  },
+  "files": [
+    "dist"
+  ],
+  "license": "MIT",
+  "dependencies": {
+    "commander": "^12.0.0"
+  },
+  "devDependencies": {
+    "@types/node": "^20.0.0",
+    "typescript": "^5.4.0"
+  }
+}

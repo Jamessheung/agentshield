@@ -1,0 +1,33 @@
+---
+category: data_exfiltration
+description: Data exfiltration techniques and endpoints
+severity: high
+
+endpoints:
+  - domain: webhook.site
+    description: Free webhook testing service, commonly abused for data exfil
+  - domain: requestbin.com
+    description: HTTP request collection service
+  - domain: pipedream.com
+    description: Workflow automation, abused for data collection
+  - domain: hookbin.com
+    description: HTTP request capture service
+  - domain: beeceptor.com
+    description: API mocking and request interception
+  - domain: ngrok.io
+    description: Tunneling service, used for reverse connections
+  - domain: burpcollaborator.net
+    description: Burp Suite collaboration server
+
+techniques:
+  - name: base64_encode_send
+    description: Encodes sensitive data in base64 before HTTP exfiltration
+    regex: '(base64|btoa|b64encode).*?(curl|wget|fetch|http)'
+
+  - name: env_file_read
+    description: Reads .env files and sends contents externally
+    regex: '(cat|read|source)\s+.*\.env.*?(curl|wget|fetch|http)'
+
+  - name: dns_exfil
+    description: Exfiltrates data via DNS queries
+    regex: 'dig\s+.*\$|nslookup\s+.*\$'

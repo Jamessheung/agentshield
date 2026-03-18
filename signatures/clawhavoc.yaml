@@ -1,0 +1,35 @@
+---
+campaign: ClawHavoc
+discovered_by: Koi Security
+date: 2026-02-01
+references:
+  - https://thehackernews.com/2026/02/researchers-find-341-malicious-clawhub.html
+  - https://www.trendmicro.com/en_us/research/26/b/openclaw-skills-used-to-distribute-atomic-macos-stealer.html
+
+indicators:
+  publisher_accounts:
+    - hightower6eu
+    - sakaen736jih
+
+  name_patterns:
+    - "solana-wallet*"
+    - "polymarket-*"
+    - "youtube-summarize*"
+    - "auto-updater*"
+    - "clawhub*"
+    - "*-pro"
+
+  url_patterns:
+    - "raw.githubusercontent.com/hightower6eu/"
+    - "raw.githubusercontent.com/sakaen736jih/"
+
+  behavior_patterns:
+    - type: fake_prerequisite
+      section_title_regex: "(prerequisites?|requirements?|setup|install)"
+      contains_download: true
+      download_source: "github.com/(hightower6eu|sakaen736jih)"
+
+  payload: "Atomic Stealer (AMOS)"
+  targets:
+    - macOS (Keychain, browser data, crypto wallets)
+    - Windows (browser data, saved passwords)

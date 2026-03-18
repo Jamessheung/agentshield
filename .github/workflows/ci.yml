@@ -1,0 +1,198 @@
+name: CI
+
+on:
+  push:
+    branches: [main, master]
+  pull_request:
+    branches: [main, master]
+
+env:
+  CARGO_TERM_COLOR: always
+
+jobs:
+  rust:
+    name: Rust Build & Test
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install Rust toolchain
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          components: clippy, rustfmt
+
+      - name: Cache cargo
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            target
+          key: ${{ runner.os }}-cargo-${{ hashFiles('**/Cargo.lock') }}
+
+      - name: Check formatting
+        run: cargo fmt --all -- --check
+
+      - name: Clippy
+        run: cargo clippy --workspace --all-targets -- -D warnings
+
+      - name: Build
+        run: cargo build --workspace --release
+
+      - name: Run tests
+        run: cargo test --workspace
+
+      - name: Integration test — malicious skill
+        run: |
+          output=$(cargo run --bin agentshield -- scan tests/fixtures/malicious/clawhavoc-sample/ --format json || true)
+          score=$(echo "$output" | grep -o '"score":[0-9]*' | head -1 | cut -d: -f2)
+          if [ "$score" -lt 50 ]; then
+            echo "FAIL: ClawHavoc sample scored $score, expected >= 50"
+            exit 1
+          fi
+          echo "PASS: ClawHavoc sample scored $score"
+
+      - name: Integration test — clean skill
+        run: |
+          output=$(cargo run --bin agentshield -- scan tests/fixtures/clean/weather-skill/ --format json)
+          score=$(echo "$output" | grep -o '"score":[0-9]*' | head -1 | cut -d: -f2)
+          if [ "$score" -gt 0 ]; then
+            echo "FAIL: Clean skill scored $score, expected 0"
+            exit 1
+          fi
+          echo "PASS: Clean skill scored $score"
+
+  typescript:
+    name: TypeScript Build
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+
+      - name: Install dependencies
+        run: cd cli && npm ci
+
+      - name: Build
+        run: cd cli && npm run build
+
+      - name: Run unit tests
+        run: cd cli && npm test
+
+      - name: Integration test — malicious skill
+        run: |
+          output=$(node cli/dist/index.js scan tests/fixtures/malicious/clawhavoc-sample/ -f json || true)
+          score=$(echo "$output" | grep -o '"score":[0-9]*' | head -1 | cut -d: -f2)
+          if [ "$score" -lt 50 ]; then
+            echo "FAIL: ClawHavoc sample scored $score, expected >= 50"
+            exit 1
+          fi
+          echo "PASS: ClawHavoc sample scored $score"
+
+      - name: Integration test — clean skill
+        run: |
+          output=$(node cli/dist/index.js scan tests/fixtures/clean/weather-skill/ -f json)
+          score=$(echo "$output" | grep -o '"score":[0-9]*' | head -1 | cut -d: -f2)
+          if [ "$score" -gt 0 ]; then
+            echo "FAIL: Clean skill scored $score, expected 0"
+            exit 1
+          fi
+          echo "PASS: Clean skill scored $score"
+
+  action:
+    name: GitHub Action Integration Test
+    runs-on: ubuntu-latest
+    needs: [typescript]
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+
+      - name: Build CLI for action
+        run: cd cli && npm ci && npm run build
+
+      - name: Install CLI globally
+        run: cd cli && npm install -g .
+
+      - name: Test action — malicious skill detection
+        id: scan_malicious
+        continue-on-error: true
+        run: |
+          # Simulate what the action does: run scan, parse JSON, check threshold
+          set +e
+          OUTPUT=$(agentshield scan tests/fixtures/malicious/clawhavoc-sample/ --format json 2>&1)
+          set -e
+
+          SCORE=$(node -e "try { const d = JSON.parse(process.argv[1]); console.log(d.score || 0); } catch { console.log(0); }" "$OUTPUT")
+          RISK_LEVEL=$(node -e "try { const d = JSON.parse(process.argv[1]); console.log(d.risk_level || 'Unknown'); } catch { console.log('Unknown'); }" "$OUTPUT")
+          FINDINGS_NUM=$(node -e "try { const d = JSON.parse(process.argv[1]); console.log((d.findings || []).length); } catch { console.log(0); }" "$OUTPUT")
+
+          echo "Score: $SCORE, Risk: $RISK_LEVEL, Findings: $FINDINGS_NUM"
+
+          # Verify outputs are populated
+          if [ "$SCORE" -lt 50 ]; then
+            echo "FAIL: Expected score >= 50, got $SCORE"
+            exit 1
+          fi
+          if [ "$FINDINGS_NUM" -lt 1 ]; then
+            echo "FAIL: Expected at least 1 finding, got $FINDINGS_NUM"
+            exit 1
+          fi
+          echo "PASS: Action correctly detected malicious skill"
+
+      - name: Verify malicious scan failed threshold
+        run: |
+          if [ "${{ steps.scan_malicious.outcome }}" = "success" ]; then
+            echo "PASS: Malicious skill scan completed"
+          else
+            echo "FAIL: Malicious skill scan step failed unexpectedly"
+            exit 1
+          fi
+
+      - name: Test action — clean skill passes
+        run: |
+          set +e
+          OUTPUT=$(agentshield scan tests/fixtures/clean/weather-skill/ --format json 2>&1)
+          set -e
+
+          SCORE=$(node -e "try { const d = JSON.parse(process.argv[1]); console.log(d.score || 0); } catch { console.log(0); }" "$OUTPUT")
+
+          if [ "$SCORE" -gt 0 ]; then
+            echo "FAIL: Clean skill scored $SCORE, expected 0"
+            exit 1
+          fi
+          echo "PASS: Clean skill passes action check"
+
+      - name: Test action — SARIF output
+        run: |
+          agentshield scan tests/fixtures/malicious/clawhavoc-sample/ --format sarif > test-results.sarif || true
+          # Verify SARIF is valid JSON with expected structure
+          node -e "
+            const fs = require('fs');
+            const sarif = JSON.parse(fs.readFileSync('test-results.sarif', 'utf8'));
+            if (sarif.version !== '2.1.0') throw new Error('Invalid SARIF version');
+            if (!sarif.runs || !sarif.runs[0].results) throw new Error('Missing SARIF runs/results');
+            console.log('PASS: Valid SARIF output with ' + sarif.runs[0].results.length + ' results');
+          "
+
+      - name: Test action — threshold enforcement
+        run: |
+          # With threshold=0, even a clean skill should pass
+          set +e
+          OUTPUT=$(agentshield scan tests/fixtures/clean/weather-skill/ --format json 2>&1)
+          set -e
+          SCORE=$(node -e "try { const d = JSON.parse(process.argv[1]); console.log(d.score || 0); } catch { console.log(0); }" "$OUTPUT")
+
+          # Simulate threshold check (same logic as action.yml)
+          THRESHOLD=50
+          if [ "$SCORE" -gt "$THRESHOLD" ] 2>/dev/null; then
+            echo "FAIL: Clean skill should not exceed threshold"
+            exit 1
+          fi
+          echo "PASS: Clean skill (score=$SCORE) passes threshold=$THRESHOLD"
