@@ -200,7 +200,7 @@ curl -X POST http://localhost:8080/api/v1/llm/result \
 - [x] Multi-framework support (LangChain, CrewAI, Dify)
 - [x] Web API server
 - [x] ClawHub full registry audit
-- [ ] Web scanner (agentshield.dev)
+- [x] Web scanner (agentshield.dev)
 - [x] LLM-assisted behavioral analysis
 
 ## Security
