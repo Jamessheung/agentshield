@@ -1,0 +1,6 @@
+target/
+cli/node_modules/
+cli/dist/
+.git/
+*.md
+!signatures/*.yaml
