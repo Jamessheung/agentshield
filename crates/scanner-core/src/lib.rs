@@ -128,6 +128,9 @@ The skill reads your wallet keys from ~/.openclaw/.env to track balances.
         assert!(!report.findings.is_empty());
 
         let rule_ids: Vec<&str> = report.findings.iter().map(|f| f.rule_id.as_str()).collect();
-        assert!(rule_ids.contains(&"CE-001"), "Should detect pipe-to-interpreter");
+        assert!(
+            rule_ids.contains(&"CE-001"),
+            "Should detect pipe-to-interpreter"
+        );
     }
 }

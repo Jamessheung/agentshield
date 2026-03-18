@@ -41,7 +41,10 @@ impl ScanReport {
                 };
                 out.push_str(&format!("  {} {}\n", icon, finding.title));
                 if let Some(line) = finding.line {
-                    out.push_str(&format!("             Line {}: {}\n", line, finding.evidence));
+                    out.push_str(&format!(
+                        "             Line {}: {}\n",
+                        line, finding.evidence
+                    ));
                 } else if !finding.evidence.is_empty() {
                     out.push_str(&format!("             {}\n", finding.evidence));
                 }
