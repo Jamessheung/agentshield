@@ -106,6 +106,50 @@ const PATTERN_RULES: PatternRule[] = [
       'Pin all package versions (npm install pkg@1.2.3, pip install pkg==1.2.3).',
     references: [],
   },
+  {
+    id: 'CE-003',
+    title: 'Dynamic code evaluation detected',
+    severity: 'High',
+    contentPattern:
+      /(?:eval\s*\(\s*(?:fetch|require|read|load|import)|exec\s*\(\s*(?:curl|wget|http)|Function\s*\(\s*['"]|new\s+Function\s*\(|import\s*\(\s*['"]http)/i,
+    description:
+      'Code dynamically evaluates or executes content that may be fetched from an external source.',
+    remediation: 'Avoid eval/exec of dynamic content. Import dependencies statically.',
+    references: [],
+  },
+  {
+    id: 'PI-002',
+    title: 'Hidden Unicode characters detected',
+    severity: 'High',
+    contentPattern:
+      /[\u200B\u200C\u200D\u200E\u200F\uFEFF\u2060\u2061\u2062\u2063\u2064\u206A-\u206F]/,
+    description:
+      'SKILL.md contains invisible Unicode characters that can hide malicious instructions from human reviewers.',
+    remediation: 'Remove all hidden Unicode characters from the skill file.',
+    references: [],
+  },
+  {
+    id: 'DE-004',
+    title: 'Environment variable harvesting',
+    severity: 'High',
+    contentPattern:
+      /(?:printenv|env\s*\||set\s*\||export\s+-p|cat\s+\/proc\/\w+\/environ|\$\(env\))/i,
+    description:
+      'Code dumps all environment variables. This is a common technique to harvest API keys and secrets in bulk.',
+    remediation: "Only access specific environment variables declared in the skill's frontmatter.",
+    references: [],
+  },
+  {
+    id: 'CE-004',
+    title: 'Download and execute pattern',
+    severity: 'High',
+    contentPattern:
+      /(?:curl|wget)\s+[^\n]*-o\s+\S+[^\n]*(?:&&|;\s*)(?:chmod\s+\+x|bash|sh|python|\.\/)/i,
+    description:
+      'Code downloads a file and immediately executes it. This is a common malware delivery technique.',
+    remediation: 'Download files and inspect them before execution.',
+    references: [],
+  },
 ];
 
 const KNOWN_MALICIOUS_URL_PATTERNS = [
