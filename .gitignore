@@ -1,0 +1,18 @@
+# Rust
+target/
+Cargo.lock
+
+# Node
+node_modules/
+cli/dist/
+cli/*.tsbuildinfo
+
+# IDE
+.vscode/
+.idea/
+
+# OS
+.DS_Store
+
+# Audit results
+audit-results/
