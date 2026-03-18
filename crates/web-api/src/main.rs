@@ -6,6 +6,7 @@
 //!   GET  /api/v1/health     — health check
 
 use actix_cors::Cors;
+use actix_governor::{Governor, GovernorConfigBuilder};
 use actix_web::{middleware, web, App, HttpResponse, HttpServer};
 use serde::{Deserialize, Serialize};
 use std::time::Instant;
@@ -498,7 +499,38 @@ async fn rules_handler() -> HttpResponse {
     HttpResponse::Ok().json(rules)
 }
 
-/// Build the Actix App with all routes configured (used by both main and tests).
+/// API scope with routes (shared between production and test builds).
+fn api_scope() -> actix_web::Scope {
+    // Max request body: 2 MB for single scans, 10 MB for batch
+    let single_body_limit = web::JsonConfig::default().limit(2 * 1024 * 1024);
+    let batch_body_limit = web::JsonConfig::default().limit(10 * 1024 * 1024);
+
+    web::scope("/api/v1")
+        .service(
+            web::resource("/scan")
+                .app_data(single_body_limit.clone())
+                .route(web::post().to(scan_handler)),
+        )
+        .service(
+            web::resource("/scan/batch")
+                .app_data(batch_body_limit)
+                .route(web::post().to(batch_scan_handler)),
+        )
+        .service(
+            web::resource("/llm/prompt")
+                .app_data(single_body_limit.clone())
+                .route(web::post().to(llm_prompt_handler)),
+        )
+        .service(
+            web::resource("/llm/result")
+                .app_data(single_body_limit)
+                .route(web::post().to(llm_result_handler)),
+        )
+        .route("/rules", web::get().to(rules_handler))
+        .route("/health", web::get().to(health_handler))
+}
+
+/// Build the production Actix App with rate limiting, CORS, compression, and logging.
 fn build_app() -> App<
     impl actix_web::dev::ServiceFactory<
         actix_web::dev::ServiceRequest,
@@ -514,30 +546,47 @@ fn build_app() -> App<
         .allow_any_header()
         .max_age(3600);
 
+    // Rate limiting: 60 requests per minute per IP
+    let governor_config = GovernorConfigBuilder::default()
+        .seconds_per_request(1)
+        .burst_size(60)
+        .finish()
+        .expect("valid governor config");
+
     App::new()
         .wrap(cors)
         .wrap(middleware::Compress::default())
-        .service(
-            web::scope("/api/v1")
-                .route("/scan", web::post().to(scan_handler))
-                .route("/scan/batch", web::post().to(batch_scan_handler))
-                .route("/llm/prompt", web::post().to(llm_prompt_handler))
-                .route("/llm/result", web::post().to(llm_result_handler))
-                .route("/rules", web::get().to(rules_handler))
-                .route("/health", web::get().to(health_handler)),
-        )
+        .wrap(middleware::Logger::default())
+        .wrap(Governor::new(&governor_config))
+        .service(api_scope())
+}
+
+/// Build a lightweight app for testing (no rate limiting, no logging).
+#[cfg(test)]
+fn build_test_app() -> App<
+    impl actix_web::dev::ServiceFactory<
+        actix_web::dev::ServiceRequest,
+        Config = (),
+        Response = actix_web::dev::ServiceResponse<impl actix_web::body::MessageBody>,
+        Error = actix_web::Error,
+        InitError = (),
+    >,
+> {
+    App::new().service(api_scope())
 }
 
 #[actix_web::main]
 async fn main() -> std::io::Result<()> {
+    env_logger::init_from_env(env_logger::Env::default().default_filter_or("info"));
+
     let host = std::env::var("HOST").unwrap_or_else(|_| "0.0.0.0".to_string());
     let port: u16 = std::env::var("PORT")
         .ok()
         .and_then(|p| p.parse().ok())
         .unwrap_or(8080);
 
-    eprintln!("AgentShield Web API v{}", env!("CARGO_PKG_VERSION"));
-    eprintln!("Listening on {}:{}", host, port);
+    log::info!("AgentShield Web API v{}", env!("CARGO_PKG_VERSION"));
+    log::info!("Listening on {}:{}", host, port);
 
     HttpServer::new(build_app)
         .bind(format!("{}:{}", host, port))?
@@ -552,7 +601,7 @@ mod tests {
 
     #[actix_web::test]
     async fn test_health_endpoint() {
-        let app = test::init_service(build_app()).await;
+        let app = test::init_service(build_test_app()).await;
         let req = test::TestRequest::get().uri("/api/v1/health").to_request();
         let resp = test::call_service(&app, req).await;
         assert!(resp.status().is_success());
@@ -563,7 +612,7 @@ mod tests {
 
     #[actix_web::test]
     async fn test_rules_endpoint() {
-        let app = test::init_service(build_app()).await;
+        let app = test::init_service(build_test_app()).await;
         let req = test::TestRequest::get().uri("/api/v1/rules").to_request();
         let resp = test::call_service(&app, req).await;
         assert!(resp.status().is_success());
@@ -579,7 +628,7 @@ mod tests {
 
     #[actix_web::test]
     async fn test_scan_clean_skill() {
-        let app = test::init_service(build_app()).await;
+        let app = test::init_service(build_test_app()).await;
         let req = test::TestRequest::post()
             .uri("/api/v1/scan")
             .set_json(serde_json::json!({
@@ -598,7 +647,7 @@ mod tests {
 
     #[actix_web::test]
     async fn test_scan_malicious_skill() {
-        let app = test::init_service(build_app()).await;
+        let app = test::init_service(build_test_app()).await;
         let req = test::TestRequest::post()
             .uri("/api/v1/scan")
             .set_json(serde_json::json!({
@@ -623,7 +672,7 @@ mod tests {
 
     #[actix_web::test]
     async fn test_scan_sarif_format() {
-        let app = test::init_service(build_app()).await;
+        let app = test::init_service(build_test_app()).await;
         let req = test::TestRequest::post()
             .uri("/api/v1/scan")
             .set_json(serde_json::json!({
@@ -645,7 +694,7 @@ mod tests {
 
     #[actix_web::test]
     async fn test_scan_with_framework() {
-        let app = test::init_service(build_app()).await;
+        let app = test::init_service(build_test_app()).await;
         let req = test::TestRequest::post()
             .uri("/api/v1/scan")
             .set_json(serde_json::json!({
@@ -663,7 +712,7 @@ mod tests {
 
     #[actix_web::test]
     async fn test_scan_missing_content() {
-        let app = test::init_service(build_app()).await;
+        let app = test::init_service(build_test_app()).await;
         let req = test::TestRequest::post()
             .uri("/api/v1/scan")
             .set_json(serde_json::json!({
@@ -677,7 +726,7 @@ mod tests {
 
     #[actix_web::test]
     async fn test_scan_empty_content() {
-        let app = test::init_service(build_app()).await;
+        let app = test::init_service(build_test_app()).await;
         let req = test::TestRequest::post()
             .uri("/api/v1/scan")
             .set_json(serde_json::json!({
@@ -696,7 +745,7 @@ mod tests {
 
     #[actix_web::test]
     async fn test_scan_breakdown_counts() {
-        let app = test::init_service(build_app()).await;
+        let app = test::init_service(build_test_app()).await;
         let req = test::TestRequest::post()
             .uri("/api/v1/scan")
             .set_json(serde_json::json!({
@@ -718,7 +767,7 @@ mod tests {
 
     #[actix_web::test]
     async fn test_llm_prompt_returns_structured_prompt() {
-        let app = test::init_service(build_app()).await;
+        let app = test::init_service(build_test_app()).await;
         let req = test::TestRequest::post()
             .uri("/api/v1/llm/prompt")
             .set_json(serde_json::json!({
@@ -741,7 +790,7 @@ mod tests {
 
     #[actix_web::test]
     async fn test_llm_result_parses_valid_response() {
-        let app = test::init_service(build_app()).await;
+        let app = test::init_service(build_test_app()).await;
         let llm_json = serde_json::json!({
             "risk_assessment": "malicious",
             "confidence": 0.9,
@@ -773,7 +822,7 @@ mod tests {
 
     #[actix_web::test]
     async fn test_llm_result_rejects_invalid_json() {
-        let app = test::init_service(build_app()).await;
+        let app = test::init_service(build_test_app()).await;
         let req = test::TestRequest::post()
             .uri("/api/v1/llm/result")
             .set_json(serde_json::json!({
@@ -788,7 +837,7 @@ mod tests {
 
     #[actix_web::test]
     async fn test_batch_scan_mixed_skills() {
-        let app = test::init_service(build_app()).await;
+        let app = test::init_service(build_test_app()).await;
         let req = test::TestRequest::post()
             .uri("/api/v1/scan/batch")
             .set_json(serde_json::json!({
@@ -823,7 +872,7 @@ mod tests {
 
     #[actix_web::test]
     async fn test_batch_scan_empty_list() {
-        let app = test::init_service(build_app()).await;
+        let app = test::init_service(build_test_app()).await;
         let req = test::TestRequest::post()
             .uri("/api/v1/scan/batch")
             .set_json(serde_json::json!({
