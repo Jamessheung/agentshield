@@ -9,6 +9,7 @@ pub mod frameworks;
 pub mod ingester;
 pub mod report;
 pub mod scoring;
+pub mod signatures_db;
 
 use std::path::Path;
 
