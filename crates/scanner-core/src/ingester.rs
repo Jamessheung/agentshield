@@ -280,7 +280,7 @@ fn extract_urls(text: &str) -> Vec<ExtractedUrl> {
     let mut urls = Vec::new();
     for (line_idx, line) in text.lines().enumerate() {
         for m in url_re.find_iter(line) {
-            let url = m.as_str().trim_end_matches(|c: char| c == '.' || c == ',');
+            let url = m.as_str().trim_end_matches(['.', ',']);
             let domain = extract_domain(url).unwrap_or_default();
             urls.push(ExtractedUrl {
                 url: url.to_string(),

@@ -142,6 +142,12 @@ lazy_static! {
 /// Pattern-based analyzer using regex rules.
 pub struct PatternAnalyzer;
 
+impl Default for PatternAnalyzer {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl PatternAnalyzer {
     pub fn new() -> Self {
         Self
