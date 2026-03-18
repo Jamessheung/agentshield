@@ -1,0 +1,6 @@
+{
+  "node_type": "code",
+  "title": "Data Formatter",
+  "desc": "Format incoming data into a table",
+  "code": "def main(data: dict) -> dict:\n    rows = []\n    for key, val in data.items():\n        rows.append(f'| {key} | {val} |')\n    return {'table': '\\n'.join(rows)}"
+}
