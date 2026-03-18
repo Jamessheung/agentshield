@@ -34,17 +34,17 @@ jobs:
         run: cargo fmt --all -- --check
 
       - name: Clippy
-        run: cargo clippy --all-targets -- -D warnings
+        run: cargo clippy --workspace --all-targets -- -D warnings
 
       - name: Build
-        run: cargo build --release
+        run: cargo build --workspace --release
 
       - name: Run tests
-        run: cargo test
+        run: cargo test --workspace
 
       - name: Integration test — malicious skill
         run: |
-          output=$(cargo run -- scan tests/fixtures/malicious/clawhavoc-sample/ --format json || true)
+          output=$(cargo run --bin agentshield -- scan tests/fixtures/malicious/clawhavoc-sample/ --format json || true)
           score=$(echo "$output" | grep -o '"score":[0-9]*' | head -1 | cut -d: -f2)
           if [ "$score" -lt 50 ]; then
             echo "FAIL: ClawHavoc sample scored $score, expected >= 50"
@@ -54,7 +54,7 @@ jobs:
 
       - name: Integration test — clean skill
         run: |
-          output=$(cargo run -- scan tests/fixtures/clean/weather-skill/ --format json)
+          output=$(cargo run --bin agentshield -- scan tests/fixtures/clean/weather-skill/ --format json)
           score=$(echo "$output" | grep -o '"score":[0-9]*' | head -1 | cut -d: -f2)
           if [ "$score" -gt 0 ]; then
             echo "FAIL: Clean skill scored $score, expected 0"

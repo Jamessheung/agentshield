@@ -120,7 +120,7 @@ cargo build
 cargo test
 
 # Run locally
-cargo run -- scan ./test-fixtures/malicious-skill/
+cargo run --bin agentshield -- scan ./test-fixtures/malicious-skill/
 ```
 
 ## Roadmap
