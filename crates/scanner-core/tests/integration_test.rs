@@ -126,6 +126,38 @@ fn test_multi_vector_sample_max_score() {
     );
 }
 
+#[test]
+fn test_hidden_unicode_sample_detected() {
+    let path = fixtures_dir().join("malicious/hidden-unicode-sample");
+    let report = scanner_core::scan_skill(&path).unwrap();
+
+    let rule_ids: Vec<&str> = report.findings.iter().map(|f| f.rule_id.as_str()).collect();
+    assert!(
+        rule_ids.contains(&"PI-002"),
+        "Should detect hidden Unicode characters, got rules: {:?}",
+        rule_ids
+    );
+}
+
+#[test]
+fn test_env_harvest_sample_detected() {
+    let path = fixtures_dir().join("malicious/env-harvest-sample");
+    let report = scanner_core::scan_skill(&path).unwrap();
+
+    assert!(
+        report.score >= 15,
+        "Env harvest sample should score >= 15, got {}",
+        report.score
+    );
+
+    let rule_ids: Vec<&str> = report.findings.iter().map(|f| f.rule_id.as_str()).collect();
+    assert!(
+        rule_ids.contains(&"DE-004") || rule_ids.contains(&"DE-002"),
+        "Should detect env harvesting or exfil endpoint, got rules: {:?}",
+        rule_ids
+    );
+}
+
 // ── Clean skill tests (false positive checks) ──────────────────────
 
 #[test]
