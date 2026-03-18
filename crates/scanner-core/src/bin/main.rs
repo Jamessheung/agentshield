@@ -30,18 +30,19 @@ fn main() {
                 process::exit(1);
             }
             let format = parse_format(&args);
+            let framework = parse_framework(&args);
             if args[2] == "--stdin" {
-                run_check_stdin(&format);
+                run_check_stdin(&format, framework.as_deref());
             } else {
-                // Treat as a file path to a single SKILL.md
-                let content = match std::fs::read_to_string(&args[2]) {
+                let filepath = &args[2];
+                let content = match std::fs::read_to_string(filepath) {
                     Ok(c) => c,
                     Err(e) => {
                         eprintln!("Error reading file: {}", e);
                         process::exit(2);
                     }
                 };
-                run_check_content("unknown", &content, &format);
+                run_check_content(filepath, &content, &format, framework.as_deref());
             }
         }
         "rules" => {
@@ -76,18 +77,26 @@ fn run_scan(path: &Path, format: &str) {
     }
 }
 
-fn run_check_stdin(format: &str) {
+fn run_check_stdin(format: &str, framework: Option<&str>) {
     use std::io::Read;
     let mut content = String::new();
     if let Err(e) = std::io::stdin().read_to_string(&mut content) {
         eprintln!("Error reading stdin: {}", e);
         process::exit(2);
     }
-    run_check_content("stdin", &content, format);
+    run_check_content("stdin", &content, format, framework);
 }
 
-fn run_check_content(name: &str, content: &str, format: &str) {
-    match scanner_core::scan_skill_content(name, content) {
+fn run_check_content(name: &str, content: &str, format: &str, framework: Option<&str>) {
+    let fw = framework.and_then(parse_framework_enum);
+
+    let result = if fw.is_some() || framework == Some("auto") {
+        scanner_core::scan_framework_content(name, name, content, fw)
+    } else {
+        scanner_core::scan_skill_content(name, content)
+    };
+
+    match result {
         Ok(report) => {
             print_report(&report, format);
             if report.score > 50 {
@@ -99,6 +108,25 @@ fn run_check_content(name: &str, content: &str, format: &str) {
             process::exit(2);
         }
     }
+}
+
+fn parse_framework_enum(s: &str) -> Option<scanner_core::frameworks::Framework> {
+    match s {
+        "langchain" => Some(scanner_core::frameworks::Framework::LangChain),
+        "crewai" => Some(scanner_core::frameworks::Framework::CrewAI),
+        "dify" => Some(scanner_core::frameworks::Framework::Dify),
+        "openclaw" => Some(scanner_core::frameworks::Framework::OpenClaw),
+        _ => None,
+    }
+}
+
+fn parse_framework(args: &[String]) -> Option<String> {
+    for (i, arg) in args.iter().enumerate() {
+        if arg == "--framework" && i + 1 < args.len() {
+            return Some(args[i + 1].clone());
+        }
+    }
+    None
 }
 
 fn print_report(report: &scanner_core::report::ScanReport, format: &str) {
@@ -289,11 +317,13 @@ fn print_usage() {
          \n\
          OPTIONS:\n\
          \x20   --format, -f <type>                Output format: terminal (default), json, sarif\n\
+         \x20   --framework <type>                 Framework: openclaw (default), langchain, crewai, dify, auto\n\
          \n\
          EXAMPLES:\n\
          \x20   agentshield scan ./my-skill/\n\
          \x20   agentshield scan ./my-skill/ --format json\n\
          \x20   agentshield check SKILL.md\n\
+         \x20   agentshield check tools.py --framework langchain\n\
          \x20   cat SKILL.md | agentshield check --stdin -f sarif\n\
          \n\
          EXIT CODES:\n\

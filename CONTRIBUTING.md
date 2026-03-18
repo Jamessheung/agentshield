@@ -127,8 +127,8 @@ This suppresses the specified rules for that skill.
 
 ```bash
 # Scan test fixtures
-cargo run -- scan tests/fixtures/malicious/clawhavoc-sample/
-cargo run -- scan tests/fixtures/clean/weather-skill/
+cargo run --bin agentshield -- scan tests/fixtures/malicious/clawhavoc-sample/
+cargo run --bin agentshield -- scan tests/fixtures/clean/weather-skill/
 
 # Full test suite
 cargo test
