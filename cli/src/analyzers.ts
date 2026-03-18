@@ -122,6 +122,32 @@ const KNOWN_MALICIOUS_NAME_PREFIXES = [
 
 const KNOWN_MALICIOUS_PUBLISHERS = ['hightower6eu', 'sakaen736jih'];
 
+/** Popular skill names for typosquatting detection (SC-002). */
+const POPULAR_SKILL_NAMES = [
+  'clawhub-cli',
+  'openclaw-tools',
+  'web-search',
+  'code-review',
+  'git-commit',
+  'file-manager',
+  'api-client',
+  'docker-manager',
+  'db-query',
+  'slack-notify',
+  'email-sender',
+  'pdf-reader',
+  'image-gen',
+  'translate',
+  'summarize',
+  'calendar',
+  'weather',
+  'calculator',
+  'note-taker',
+  'task-manager',
+];
+
+const TYPOSQUAT_SUFFIXES = ['-pro', '-free', '-plus', '-official', '-latest'];
+
 /** Run all analyzers on a parsed skill. */
 export function runAnalyzers(skill: ParsedSkill): Finding[] {
   const findings: Finding[] = [
@@ -131,9 +157,17 @@ export function runAnalyzers(skill: ParsedSkill): Finding[] {
     ...runSignatureAnalyzer(skill),
   ];
 
+  // Parse ignore directives
+  const ignored = parseIgnoreDirectives(skill.rawText);
+
+  // Filter out suppressed findings
+  const filtered = ignored.length > 0
+    ? findings.filter((f) => !ignored.includes(f.rule_id))
+    : findings;
+
   // Deduplicate by rule_id + line
   const seen = new Set<string>();
-  const deduped = findings.filter((f) => {
+  const deduped = filtered.filter((f) => {
     const key = `${f.rule_id}:${f.line}`;
     if (seen.has(key)) return false;
     seen.add(key);
@@ -151,6 +185,22 @@ export function runAnalyzers(skill: ParsedSkill): Finding[] {
   deduped.sort((a, b) => order[a.severity] - order[b.severity]);
 
   return deduped;
+}
+
+/** Parse `agentshield:ignore RULE-ID` directives from skill content. */
+function parseIgnoreDirectives(text: string): string[] {
+  const re = /agentshield:ignore\s+([A-Z][\w,\s-]+)/g;
+  const ignored: string[] = [];
+  let m;
+  while ((m = re.exec(text)) !== null) {
+    for (const rule of m[1].split(',')) {
+      const trimmed = rule.trim();
+      if (trimmed && /^[A-Z]/.test(trimmed)) {
+        ignored.push(trimmed);
+      }
+    }
+  }
+  return ignored;
 }
 
 function runPatternAnalyzer(skill: ParsedSkill): Finding[] {
@@ -347,7 +397,66 @@ function runSignatureAnalyzer(skill: ParsedSkill): Finding[] {
     }
   }
 
+  // SC-002: Typosquatting detection
+  if (nameLower) {
+    for (const popular of POPULAR_SKILL_NAMES) {
+      if (nameLower === popular) continue;
+
+      // Check edit distance
+      const distance = levenshtein(nameLower, popular);
+      if (distance > 0 && distance <= 2) {
+        findings.push({
+          rule_id: 'SC-002',
+          title: 'Possible typosquatting of popular skill name',
+          severity: 'High',
+          description: `Skill name '${skill.frontmatter.name}' is very similar to the popular skill '${popular}' (edit distance: ${distance}).`,
+          evidence: `'${skill.frontmatter.name}' vs '${popular}' (distance: ${distance})`,
+          line: null,
+          remediation: 'Verify this is the intended skill. Check the publisher identity.',
+          references: [],
+        });
+        break;
+      }
+
+      // Check common suffix patterns
+      for (const suffix of TYPOSQUAT_SUFFIXES) {
+        if (nameLower === `${popular}${suffix}`) {
+          findings.push({
+            rule_id: 'SC-002',
+            title: 'Possible typosquatting of popular skill name',
+            severity: 'High',
+            description: `Skill name '${skill.frontmatter.name}' appends '${suffix}' to the popular skill '${popular}'.`,
+            evidence: `'${skill.frontmatter.name}' = '${popular}' + '${suffix}'`,
+            line: null,
+            remediation: 'Verify this is the intended skill. Check the publisher identity.',
+            references: [],
+          });
+          break;
+        }
+      }
+    }
+  }
+
   return findings;
+}
+
+/** Compute Levenshtein edit distance between two strings. */
+function levenshtein(a: string, b: string): number {
+  const m = a.length;
+  const n = b.length;
+  const dp: number[][] = Array.from({ length: m + 1 }, () => Array(n + 1).fill(0));
+
+  for (let i = 0; i <= m; i++) dp[i][0] = i;
+  for (let j = 0; j <= n; j++) dp[0][j] = j;
+
+  for (let i = 1; i <= m; i++) {
+    for (let j = 1; j <= n; j++) {
+      const cost = a[i - 1] === b[j - 1] ? 0 : 1;
+      dp[i][j] = Math.min(dp[i - 1][j] + 1, dp[i][j - 1] + 1, dp[i - 1][j - 1] + cost);
+    }
+  }
+
+  return dp[m][n];
 }
 
 function makeFinding(rule: PatternRule, evidence: string, line: number): Finding {
