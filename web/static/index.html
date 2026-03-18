@@ -1,0 +1,222 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>AgentShield — AI Agent Security Scanner</title>
+  <link rel="stylesheet" href="/static/styles.css">
+  <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>🛡️</text></svg>">
+</head>
+<body>
+  <header>
+    <div class="container header-inner">
+      <div class="logo">
+        <span class="logo-icon">&#x1F6E1;</span>
+        <h1>AgentShield</h1>
+      </div>
+      <nav>
+        <a href="#scanner" class="nav-link active" data-tab="scanner">Scanner</a>
+        <a href="#rules" class="nav-link" data-tab="rules">Rules</a>
+        <a href="#api" class="nav-link" data-tab="api">API Docs</a>
+      </nav>
+    </div>
+  </header>
+
+  <main class="container">
+    <!-- Scanner Tab -->
+    <section id="tab-scanner" class="tab-content active">
+      <div class="hero">
+        <h2>Scan AI Agent Skills for Security Threats</h2>
+        <p>Paste a SKILL.md, LangChain tool, CrewAI agent, or Dify workflow to detect malicious patterns, prompt injection, data exfiltration, and supply chain attacks.</p>
+      </div>
+
+      <div class="scan-form">
+        <div class="form-row">
+          <div class="form-group">
+            <label for="skill-name">Skill Name <span class="optional">(optional)</span></label>
+            <input type="text" id="skill-name" placeholder="e.g. weather-tool">
+          </div>
+          <div class="form-group">
+            <label for="framework">Framework</label>
+            <select id="framework">
+              <option value="">Auto-detect</option>
+              <option value="openclaw">OpenClaw (SKILL.md)</option>
+              <option value="langchain">LangChain</option>
+              <option value="crewai">CrewAI</option>
+              <option value="dify">Dify</option>
+            </select>
+          </div>
+        </div>
+
+        <div class="form-group">
+          <label for="skill-content">Skill Content</label>
+          <textarea id="skill-content" rows="14" placeholder="---
+name: my-skill
+description: A useful tool
+version: &quot;1.0.0&quot;
+---
+# My Skill
+
+Paste your skill content here..."></textarea>
+        </div>
+
+        <div class="form-actions">
+          <button id="scan-btn" class="btn btn-primary">
+            <span class="btn-text">Scan Now</span>
+            <span class="btn-loading" hidden>Scanning...</span>
+          </button>
+          <button id="clear-btn" class="btn btn-secondary">Clear</button>
+          <label class="file-upload btn btn-secondary">
+            Upload File
+            <input type="file" id="file-input" accept=".md,.py,.yaml,.yml,.json,.txt" hidden>
+          </label>
+        </div>
+      </div>
+
+      <!-- Results -->
+      <div id="results" class="results" hidden>
+        <div class="results-header">
+          <h3>Scan Results</h3>
+          <div class="results-actions">
+            <button id="download-json" class="btn btn-sm">JSON</button>
+            <button id="download-sarif" class="btn btn-sm">SARIF</button>
+          </div>
+        </div>
+
+        <div class="score-card" id="score-card">
+          <div class="score-circle" id="score-circle">
+            <span class="score-value" id="score-value">0</span>
+            <span class="score-label">/ 100</span>
+          </div>
+          <div class="score-info">
+            <span class="risk-badge" id="risk-badge">Clean</span>
+            <span class="skill-name-display" id="skill-name-display"></span>
+            <span class="scan-time" id="scan-time"></span>
+          </div>
+        </div>
+
+        <div class="breakdown" id="breakdown">
+          <div class="breakdown-item critical" id="bc-critical">
+            <span class="breakdown-count">0</span>
+            <span class="breakdown-label">Critical</span>
+          </div>
+          <div class="breakdown-item high" id="bc-high">
+            <span class="breakdown-count">0</span>
+            <span class="breakdown-label">High</span>
+          </div>
+          <div class="breakdown-item medium" id="bc-medium">
+            <span class="breakdown-count">0</span>
+            <span class="breakdown-label">Medium</span>
+          </div>
+          <div class="breakdown-item low" id="bc-low">
+            <span class="breakdown-count">0</span>
+            <span class="breakdown-label">Low</span>
+          </div>
+          <div class="breakdown-item info" id="bc-info">
+            <span class="breakdown-count">0</span>
+            <span class="breakdown-label">Info</span>
+          </div>
+        </div>
+
+        <div id="findings-list" class="findings-list"></div>
+
+        <div id="no-findings" class="no-findings" hidden>
+          <span class="check-icon">&#10003;</span>
+          <p>No security issues detected. This skill appears safe.</p>
+        </div>
+      </div>
+
+      <!-- Error -->
+      <div id="error-box" class="error-box" hidden>
+        <strong>Error:</strong> <span id="error-message"></span>
+      </div>
+    </section>
+
+    <!-- Rules Tab -->
+    <section id="tab-rules" class="tab-content" hidden>
+      <h2>Detection Rules</h2>
+      <p>AgentShield checks for the following security issues:</p>
+      <div id="rules-list" class="rules-list">
+        <p class="loading">Loading rules...</p>
+      </div>
+    </section>
+
+    <!-- API Docs Tab -->
+    <section id="tab-api" class="tab-content" hidden>
+      <h2>API Documentation</h2>
+      <p>AgentShield exposes a RESTful API for programmatic scanning.</p>
+
+      <div class="api-endpoint">
+        <h3><span class="method post">POST</span> /api/v1/scan</h3>
+        <p>Scan a single skill for security vulnerabilities.</p>
+        <pre><code>curl -X POST http://localhost:8080/api/v1/scan \
+  -H 'Content-Type: application/json' \
+  -d '{
+    "name": "my-skill",
+    "content": "---\nname: test\n---\n# Test",
+    "framework": "auto",
+    "format": "json"
+  }'</code></pre>
+      </div>
+
+      <div class="api-endpoint">
+        <h3><span class="method post">POST</span> /api/v1/scan/batch</h3>
+        <p>Batch scan up to 500 skills in one request.</p>
+        <pre><code>curl -X POST http://localhost:8080/api/v1/scan/batch \
+  -H 'Content-Type: application/json' \
+  -d '{
+    "skills": [
+      {"name": "a", "content": "..."},
+      {"name": "b", "content": "..."}
+    ]
+  }'</code></pre>
+      </div>
+
+      <div class="api-endpoint">
+        <h3><span class="method post">POST</span> /api/v1/llm/prompt</h3>
+        <p>Generate a structured LLM prompt for deeper behavioral analysis.</p>
+        <pre><code>curl -X POST http://localhost:8080/api/v1/llm/prompt \
+  -H 'Content-Type: application/json' \
+  -d '{"content": "---\nname: test\n---\n# Test"}'</code></pre>
+        <p>Returns <code>{ system, user, static_report }</code>. Send <code>system</code> + <code>user</code> to your LLM, then parse with <code>/api/v1/llm/result</code>.</p>
+      </div>
+
+      <div class="api-endpoint">
+        <h3><span class="method post">POST</span> /api/v1/llm/result</h3>
+        <p>Parse an LLM response into structured findings.</p>
+        <pre><code>curl -X POST http://localhost:8080/api/v1/llm/result \
+  -H 'Content-Type: application/json' \
+  -d '{"llm_response": "{\"risk_assessment\": ...}"}'</code></pre>
+      </div>
+
+      <div class="api-endpoint">
+        <h3><span class="method get">GET</span> /api/v1/rules</h3>
+        <p>List all detection rules.</p>
+      </div>
+
+      <div class="api-endpoint">
+        <h3><span class="method get">GET</span> /api/v1/health</h3>
+        <p>Health check endpoint.</p>
+      </div>
+
+      <div class="api-info">
+        <h3>Rate Limits</h3>
+        <ul>
+          <li>Scan endpoints: 60 requests/minute per IP</li>
+          <li>Batch endpoint: 10 requests/minute per IP</li>
+          <li>Max body: 2 MB (single scan), 10 MB (batch)</li>
+        </ul>
+        <p>Full OpenAPI 3.0 spec available at <code>/api/v1/openapi.yaml</code></p>
+      </div>
+    </section>
+  </main>
+
+  <footer>
+    <div class="container">
+      <p>AgentShield &mdash; Open-source security scanner for AI agent tools &middot; <a href="https://github.com/Jamessheung/agentshield">GitHub</a> &middot; MIT License</p>
+    </div>
+  </footer>
+
+  <script src="/static/app.js"></script>
+</body>
+</html>

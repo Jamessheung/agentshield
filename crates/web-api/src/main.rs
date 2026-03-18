@@ -6,9 +6,11 @@
 //!   GET  /api/v1/health     — health check
 
 use actix_cors::Cors;
+use actix_files::Files;
 use actix_governor::{Governor, GovernorConfigBuilder};
 use actix_web::{middleware, web, App, HttpResponse, HttpServer};
 use serde::{Deserialize, Serialize};
+use std::path::PathBuf;
 use std::time::Instant;
 
 #[derive(Deserialize)]
@@ -499,6 +501,20 @@ async fn rules_handler() -> HttpResponse {
     HttpResponse::Ok().json(rules)
 }
 
+/// Serve the OpenAPI spec as YAML.
+async fn openapi_handler() -> HttpResponse {
+    HttpResponse::Ok()
+        .content_type("text/yaml; charset=utf-8")
+        .body(include_str!("../openapi.yaml"))
+}
+
+/// Redirect root to the scanner UI.
+async fn index_redirect() -> HttpResponse {
+    HttpResponse::Found()
+        .append_header(("Location", "/static/index.html"))
+        .finish()
+}
+
 /// API scope with routes (shared between production and test builds).
 fn api_scope() -> actix_web::Scope {
     // Max request body: 2 MB for single scans, 10 MB for batch
@@ -528,9 +544,26 @@ fn api_scope() -> actix_web::Scope {
         )
         .route("/rules", web::get().to(rules_handler))
         .route("/health", web::get().to(health_handler))
+        .route("/openapi.yaml", web::get().to(openapi_handler))
 }
 
-/// Build the production Actix App with rate limiting, CORS, compression, and logging.
+/// Resolve the path to the web/static directory.
+fn resolve_static_dir() -> PathBuf {
+    // Check STATIC_DIR env var first (for Docker / custom deployments)
+    if let Ok(dir) = std::env::var("STATIC_DIR") {
+        return PathBuf::from(dir);
+    }
+    // Default: <repo_root>/web/static (works in dev)
+    let manifest = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
+    manifest
+        .parent()
+        .unwrap()
+        .parent()
+        .unwrap()
+        .join("web/static")
+}
+
+/// Build the production Actix App with rate limiting, CORS, compression, logging, and static files.
 fn build_app() -> App<
     impl actix_web::dev::ServiceFactory<
         actix_web::dev::ServiceRequest,
@@ -553,15 +586,19 @@ fn build_app() -> App<
         .finish()
         .expect("valid governor config");
 
+    let static_dir = resolve_static_dir();
+
     App::new()
         .wrap(cors)
         .wrap(middleware::Compress::default())
         .wrap(middleware::Logger::default())
         .wrap(Governor::new(&governor_config))
+        .route("/", web::get().to(index_redirect))
         .service(api_scope())
+        .service(Files::new("/static", &static_dir).index_file("index.html"))
 }
 
-/// Build a lightweight app for testing (no rate limiting, no logging).
+/// Build a lightweight app for testing (no rate limiting, no logging, no static files).
 #[cfg(test)]
 fn build_test_app() -> App<
     impl actix_web::dev::ServiceFactory<
@@ -585,8 +622,10 @@ async fn main() -> std::io::Result<()> {
         .and_then(|p| p.parse().ok())
         .unwrap_or(8080);
 
+    let static_dir = resolve_static_dir();
     log::info!("AgentShield Web API v{}", env!("CARGO_PKG_VERSION"));
     log::info!("Listening on {}:{}", host, port);
+    log::info!("Static files: {}", static_dir.display());
 
     HttpServer::new(build_app)
         .bind(format!("{}:{}", host, port))?
@@ -883,5 +922,21 @@ mod tests {
         assert!(resp.status().is_success());
         let body: serde_json::Value = test::read_body_json(resp).await;
         assert_eq!(body["total"], 0);
+    }
+
+    // ── OpenAPI spec endpoint ───────────────────────────────────────
+
+    #[actix_web::test]
+    async fn test_openapi_spec() {
+        let app = test::init_service(build_test_app()).await;
+        let req = test::TestRequest::get()
+            .uri("/api/v1/openapi.yaml")
+            .to_request();
+        let resp = test::call_service(&app, req).await;
+        assert!(resp.status().is_success());
+        let body = test::read_body(resp).await;
+        let text = std::str::from_utf8(&body).unwrap();
+        assert!(text.contains("openapi: 3.0.3"));
+        assert!(text.contains("/api/v1/scan"));
     }
 }
