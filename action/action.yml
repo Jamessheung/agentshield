@@ -17,6 +17,10 @@ inputs:
     description: 'Fail the action if risk score exceeds this threshold (0-100)'
     required: false
     default: '50'
+  upload-sarif:
+    description: 'Upload SARIF results to GitHub Code Scanning (requires security-events: write)'
+    required: false
+    default: 'false'
 
 outputs:
   score:
@@ -28,6 +32,9 @@ outputs:
   findings-count:
     description: 'Number of findings'
     value: ${{ steps.scan.outputs.findings_count }}
+  sarif-file:
+    description: 'Path to SARIF output file (if generated)'
+    value: ${{ steps.scan.outputs.sarif_file }}
 
 runs:
   using: 'composite'
@@ -50,33 +57,38 @@ runs:
         EXIT_CODE=$?
         set -e
 
-        # Extract metrics from JSON output
-        SCORE=$(echo "$OUTPUT" | grep -o '"score":[0-9]*' | head -1 | cut -d: -f2)
-        RISK_LEVEL=$(echo "$OUTPUT" | grep -o '"risk_level":"[^"]*"' | head -1 | cut -d'"' -f4)
-        FINDINGS_COUNT=$(echo "$OUTPUT" | grep -o '"findings":\[' | head -1)
+        # Parse JSON metrics using node for reliability
+        SCORE=$(node -e "try { const d = JSON.parse(process.argv[1]); console.log(d.score || 0); } catch { console.log(0); }" "$OUTPUT")
+        RISK_LEVEL=$(node -e "try { const d = JSON.parse(process.argv[1]); console.log(d.risk_level || 'Unknown'); } catch { console.log('Unknown'); }" "$OUTPUT")
+        FINDINGS_NUM=$(node -e "try { const d = JSON.parse(process.argv[1]); console.log((d.findings || []).length); } catch { console.log(0); }" "$OUTPUT")
 
-        # Count findings by counting rule_id occurrences
-        FINDINGS_NUM=$(echo "$OUTPUT" | grep -o '"rule_id"' | wc -l)
-
-        echo "score=${SCORE:-0}" >> $GITHUB_OUTPUT
-        echo "risk_level=${RISK_LEVEL:-Unknown}" >> $GITHUB_OUTPUT
-        echo "findings_count=${FINDINGS_NUM:-0}" >> $GITHUB_OUTPUT
+        echo "score=${SCORE}" >> $GITHUB_OUTPUT
+        echo "risk_level=${RISK_LEVEL}" >> $GITHUB_OUTPUT
+        echo "findings_count=${FINDINGS_NUM}" >> $GITHUB_OUTPUT
 
         # Display the report
-        if [ "${{ inputs.format }}" = "terminal" ]; then
+        if [ "${{ inputs.format }}" = "terminal" ] || [ "${{ inputs.format }}" = "" ]; then
           agentshield scan "${{ inputs.path }}" --format terminal || true
         else
           echo "$OUTPUT"
         fi
 
-        # Write SARIF if requested
-        if [ "${{ inputs.format }}" = "sarif" ]; then
+        # Generate SARIF file
+        if [ "${{ inputs.format }}" = "sarif" ] || [ "${{ inputs.upload-sarif }}" = "true" ]; then
           agentshield scan "${{ inputs.path }}" --format sarif > agentshield-results.sarif || true
+          echo "sarif_file=agentshield-results.sarif" >> $GITHUB_OUTPUT
         fi
 
         # Check threshold
         THRESHOLD=${{ inputs.fail-on-high }}
-        if [ "${SCORE:-0}" -gt "${THRESHOLD}" ]; then
+        if [ "${SCORE}" -gt "${THRESHOLD}" ] 2>/dev/null; then
           echo "::error::AgentShield scan failed: risk score ${SCORE} exceeds threshold ${THRESHOLD}"
           exit 1
         fi
+
+    - name: Upload SARIF to GitHub Code Scanning
+      if: inputs.upload-sarif == 'true' && always()
+      uses: github/codeql-action/upload-sarif@v3
+      with:
+        sarif_file: agentshield-results.sarif
+        category: agentshield
