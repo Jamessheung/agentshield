@@ -4,6 +4,7 @@ version = "0.1.0"
 edition = "2021"
 description = "Core scanning engine for AgentShield — detects malicious patterns in OpenClaw SKILL.md files"
 license = "MIT"
+default-run = "agentshield"
 
 [[bin]]
 name = "agentshield"
