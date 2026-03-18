@@ -1,0 +1,94 @@
+name: 'AgentShield Scan'
+description: 'Scan OpenClaw skills for security issues in CI/CD pipelines'
+branding:
+  icon: 'shield'
+  color: 'blue'
+
+inputs:
+  path:
+    description: 'Path to the skill directory to scan'
+    required: true
+    default: '.'
+  format:
+    description: 'Output format: terminal, json, sarif'
+    required: false
+    default: 'terminal'
+  fail-on-high:
+    description: 'Fail the action if risk score exceeds this threshold (0-100)'
+    required: false
+    default: '50'
+  upload-sarif:
+    description: 'Upload SARIF results to GitHub Code Scanning (requires security-events: write)'
+    required: false
+    default: 'false'
+
+outputs:
+  score:
+    description: 'Risk score (0-100)'
+    value: ${{ steps.scan.outputs.score }}
+  risk-level:
+    description: 'Risk level (Clean/Low/Medium/High/Critical)'
+    value: ${{ steps.scan.outputs.risk_level }}
+  findings-count:
+    description: 'Number of findings'
+    value: ${{ steps.scan.outputs.findings_count }}
+  sarif-file:
+    description: 'Path to SARIF output file (if generated)'
+    value: ${{ steps.scan.outputs.sarif_file }}
+
+runs:
+  using: 'composite'
+  steps:
+    - name: Setup Node.js
+      uses: actions/setup-node@v4
+      with:
+        node-version: '20'
+
+    - name: Install AgentShield
+      shell: bash
+      run: npm install -g agentshield
+
+    - name: Run scan
+      id: scan
+      shell: bash
+      run: |
+        set +e
+        OUTPUT=$(agentshield scan "${{ inputs.path }}" --format json 2>&1)
+        EXIT_CODE=$?
+        set -e
+
+        # Parse JSON metrics using node for reliability
+        SCORE=$(node -e "try { const d = JSON.parse(process.argv[1]); console.log(d.score || 0); } catch { console.log(0); }" "$OUTPUT")
+        RISK_LEVEL=$(node -e "try { const d = JSON.parse(process.argv[1]); console.log(d.risk_level || 'Unknown'); } catch { console.log('Unknown'); }" "$OUTPUT")
+        FINDINGS_NUM=$(node -e "try { const d = JSON.parse(process.argv[1]); console.log((d.findings || []).length); } catch { console.log(0); }" "$OUTPUT")
+
+        echo "score=${SCORE}" >> $GITHUB_OUTPUT
+        echo "risk_level=${RISK_LEVEL}" >> $GITHUB_OUTPUT
+        echo "findings_count=${FINDINGS_NUM}" >> $GITHUB_OUTPUT
+
+        # Display the report
+        if [ "${{ inputs.format }}" = "terminal" ] || [ "${{ inputs.format }}" = "" ]; then
+          agentshield scan "${{ inputs.path }}" --format terminal || true
+        else
+          echo "$OUTPUT"
+        fi
+
+        # Generate SARIF file
+        if [ "${{ inputs.format }}" = "sarif" ] || [ "${{ inputs.upload-sarif }}" = "true" ]; then
+          agentshield scan "${{ inputs.path }}" --format sarif > agentshield-results.sarif || true
+          echo "sarif_file=agentshield-results.sarif" >> $GITHUB_OUTPUT
+        fi
+
+        # Check threshold
+        THRESHOLD=${{ inputs.fail-on-high }}
+        if [ "${SCORE}" -gt "${THRESHOLD}" ] 2>/dev/null; then
+          echo "::error::AgentShield scan failed: risk score ${SCORE} exceeds threshold ${THRESHOLD}"
+          exit 1
+        fi
+
+    - name: Upload SARIF to GitHub Code Scanning
+      if: inputs.upload-sarif == 'true' && always()
+      uses: github/codeql-action/upload-sarif@v3
+      with:
+        sarif_file: agentshield-results.sarif
+        category: agentshield

@@ -1,0 +1,33 @@
+---
+category: reverse_shells
+description: Common reverse shell patterns across languages
+severity: critical
+
+patterns:
+  - name: bash_tcp
+    regex: 'bash\s+-i\s+>&\s*/dev/tcp/'
+    description: Bash reverse shell using /dev/tcp
+
+  - name: netcat_exec
+    regex: 'nc\s+(-e|--exec)\s+/bin/(sh|bash)'
+    description: Netcat reverse shell with exec
+
+  - name: python_socket
+    regex: 'python[23]?\s+-c\s+.*import\s+socket.*subprocess'
+    description: Python reverse shell using socket module
+
+  - name: mkfifo_pipe
+    regex: 'mkfifo\s+/tmp/\w+.*nc\s+'
+    description: Named pipe reverse shell with netcat
+
+  - name: perl_socket
+    regex: 'perl\s+-e\s+.*socket.*INET'
+    description: Perl reverse shell
+
+  - name: ruby_socket
+    regex: 'ruby\s+-rsocket\s+-e'
+    description: Ruby reverse shell
+
+  - name: php_exec
+    regex: 'php\s+-r\s+.*fsockopen'
+    description: PHP reverse shell
