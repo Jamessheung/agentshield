@@ -9,7 +9,7 @@
   "scripts": {
     "build": "tsc",
     "start": "node dist/index.js",
-    "test": "node --test dist/analyzers.test.js",
+    "test": "node --test dist/analyzers.test.js dist/output.test.js",
     "prepublishOnly": "npm run build"
   },
   "files": [
