@@ -233,15 +233,14 @@ export function runAnalyzers(skill: ParsedSkill): Finding[] {
 
 /** Parse `agentshield:ignore RULE-ID` directives from skill content. */
 function parseIgnoreDirectives(text: string): string[] {
-  const re = /agentshield:ignore\s+([A-Z][\w,\s-]+)/g;
+  const re = /agentshield:ignore\s+([^\n]+)/g;
+  const ruleIdRe = /[A-Z]{1,4}-\d{3}/g;
   const ignored: string[] = [];
   let m;
   while ((m = re.exec(text)) !== null) {
-    for (const rule of m[1].split(',')) {
-      const trimmed = rule.trim();
-      if (trimmed && /^[A-Z]/.test(trimmed)) {
-        ignored.push(trimmed);
-      }
+    let ruleMatch;
+    while ((ruleMatch = ruleIdRe.exec(m[1])) !== null) {
+      ignored.push(ruleMatch[0]);
     }
   }
   return ignored;

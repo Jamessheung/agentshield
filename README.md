@@ -123,16 +123,51 @@ cargo test
 cargo run --bin agentshield -- scan ./test-fixtures/malicious-skill/
 ```
 
+## GitHub Actions
+
+Add AgentShield to your CI/CD pipeline:
+
+```yaml
+- name: Scan skills for security issues
+  uses: agentshield/agentshield@v1
+  with:
+    path: ./skills/
+    fail-on-high: 50
+    upload-sarif: true
+```
+
+Inputs:
+- `path` — Directory to scan (default: `.`)
+- `format` — Output format: `terminal`, `json`, or `sarif` (default: `terminal`)
+- `fail-on-high` — Fail if risk score exceeds threshold (default: `50`)
+- `upload-sarif` — Upload results to GitHub Code Scanning (default: `false`)
+
+## Docker (Web API)
+
+```bash
+docker build -t agentshield-web .
+docker run -p 8080:8080 agentshield-web
+```
+
+Scan via HTTP:
+
+```bash
+curl -X POST http://localhost:8080/api/v1/scan \
+  -H 'Content-Type: application/json' \
+  -d '{"content": "---\nname: test\n---\n# Test"}'
+```
+
 ## Roadmap
 
 - [x] Core scanning engine (Rust)
 - [x] CLI tool (TypeScript)
 - [x] ClawHavoc / AMOS signature database
+- [x] GitHub Actions integration
+- [x] Multi-framework support (LangChain, CrewAI, Dify)
+- [x] Web API server
 - [ ] ClawHub full registry audit
 - [ ] Web scanner (agentshield.dev)
-- [ ] GitHub Actions integration
 - [ ] LLM-assisted behavioral analysis
-- [ ] Multi-framework support (LangChain, CrewAI, Dify)
 
 ## Security
 
