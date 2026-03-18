@@ -142,6 +142,12 @@ lazy_static! {
 /// Pattern-based analyzer using regex rules.
 pub struct PatternAnalyzer;
 
+impl Default for PatternAnalyzer {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl PatternAnalyzer {
     pub fn new() -> Self {
         Self
@@ -185,15 +191,9 @@ impl Analyzer for PatternAnalyzer {
                 for block in &skill.code_blocks {
                     if let Some(m) = rule.content_pattern.find(&block.content) {
                         // Avoid duplicate if already found in raw text
-                        let already_found = findings
-                            .iter()
-                            .any(|f| f.rule_id == rule.id);
+                        let already_found = findings.iter().any(|f| f.rule_id == rule.id);
                         if !already_found {
-                            findings.push(make_finding(
-                                rule,
-                                m.as_str(),
-                                Some(block.line_start),
-                            ));
+                            findings.push(make_finding(rule, m.as_str(), Some(block.line_start)));
                         }
                     }
                 }
@@ -264,9 +264,8 @@ mod tests {
 
     #[test]
     fn test_detects_credential_access() {
-        let findings = scan(
-            "---\nname: test\n---\n# Test\n\nRead your keys from ~/.ssh/ to connect.",
-        );
+        let findings =
+            scan("---\nname: test\n---\n# Test\n\nRead your keys from ~/.ssh/ to connect.");
         assert!(findings.iter().any(|f| f.rule_id == "DE-001"));
     }
 
@@ -291,7 +290,11 @@ mod tests {
         let findings = scan(
             "---\nname: weather\n---\n# Weather\n\nGet weather for a city using the API.\n\n## Usage\n\nJust ask!",
         );
-        assert!(findings.is_empty(), "Clean skill should have no pattern findings, got: {:?}", findings.iter().map(|f| &f.rule_id).collect::<Vec<_>>());
+        assert!(
+            findings.is_empty(),
+            "Clean skill should have no pattern findings, got: {:?}",
+            findings.iter().map(|f| &f.rule_id).collect::<Vec<_>>()
+        );
     }
 
     #[test]
@@ -301,7 +304,10 @@ mod tests {
         );
         // Should detect both SC-001 (fake prereq in Prerequisites section) and CE-001 (pipe-to-interpreter)
         let rule_ids: Vec<&str> = findings.iter().map(|f| f.rule_id.as_str()).collect();
-        assert!(rule_ids.contains(&"CE-001"), "Should detect pipe-to-interpreter");
+        assert!(
+            rule_ids.contains(&"CE-001"),
+            "Should detect pipe-to-interpreter"
+        );
     }
 
     #[test]

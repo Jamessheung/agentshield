@@ -8,6 +8,12 @@ use crate::ingester::ParsedSkill;
 /// inconsistent with the skill's stated purpose.
 pub struct BehavioralAnalyzer;
 
+impl Default for BehavioralAnalyzer {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl BehavioralAnalyzer {
     pub fn new() -> Self {
         Self
@@ -66,8 +72,7 @@ impl Analyzer for BehavioralAnalyzer {
                     description: format!(
                         "Skill '{}' ({}) accesses sensitive credential paths \
                          but its description does not indicate a need for such access.",
-                        skill.frontmatter.name,
-                        desc
+                        skill.frontmatter.name, desc
                     ),
                     evidence: sensitive_paths.join(", "),
                     line: None,
@@ -105,8 +110,7 @@ impl Analyzer for BehavioralAnalyzer {
                 ),
                 evidence: external_urls[..5.min(external_urls.len())].join(", "),
                 line: None,
-                remediation: "Reduce external URL references to only those necessary."
-                    .to_string(),
+                remediation: "Reduce external URL references to only those necessary.".to_string(),
                 references: vec![],
             });
         }
@@ -138,7 +142,10 @@ impl Analyzer for BehavioralAnalyzer {
                      Legitimate skills typically have more documentation.",
                     body_len, has_env_reqs
                 ),
-                evidence: format!("body_length={}, env_vars_required={}", body_len, has_env_reqs),
+                evidence: format!(
+                    "body_length={}, env_vars_required={}",
+                    body_len, has_env_reqs
+                ),
                 line: None,
                 remediation: "Add proper documentation or reduce permission requirements."
                     .to_string(),

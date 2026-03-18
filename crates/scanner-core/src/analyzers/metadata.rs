@@ -7,6 +7,12 @@ use crate::ingester::ParsedSkill;
 /// Analyzer for SKILL.md frontmatter metadata.
 pub struct MetadataAnalyzer;
 
+impl Default for MetadataAnalyzer {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl MetadataAnalyzer {
     pub fn new() -> Self {
         Self
@@ -93,8 +99,9 @@ impl Analyzer for MetadataAnalyzer {
                                 ),
                                 evidence: env_vars.join(", "),
                                 line: None,
-                                remediation: "Review whether all environment variables are necessary."
-                                    .to_string(),
+                                remediation:
+                                    "Review whether all environment variables are necessary."
+                                        .to_string(),
                                 references: vec![],
                             });
                         }
@@ -102,8 +109,10 @@ impl Analyzer for MetadataAnalyzer {
                         // Check for sensitive-sounding env vars
                         for var in env_vars {
                             let upper = var.to_uppercase();
-                            if upper.contains("SECRET") || upper.contains("PRIVATE_KEY")
-                                || upper.contains("PASSWORD") || upper.contains("TOKEN")
+                            if upper.contains("SECRET")
+                                || upper.contains("PRIVATE_KEY")
+                                || upper.contains("PASSWORD")
+                                || upper.contains("TOKEN")
                             {
                                 // This is normal for API tokens, only flag if many
                                 // We just note it as info
