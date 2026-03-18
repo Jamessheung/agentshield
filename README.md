@@ -151,6 +151,8 @@ docker run -p 8080:8080 agentshield-web
 
 ### API Endpoints
 
+Full OpenAPI 3.0 specification: [`crates/web-api/openapi.yaml`](crates/web-api/openapi.yaml)
+
 **POST /api/v1/scan** — Scan a single skill
 
 ```bash
@@ -203,9 +205,7 @@ curl -X POST http://localhost:8080/api/v1/llm/result \
 
 ## Security
 
-If you discover a vulnerability in AgentShield itself, please open a GitHub issue with the `security` label.
-
-<!-- TODO: Update to security@agentshield.dev once domain email is configured -->
+See [SECURITY.md](SECURITY.md) for our vulnerability disclosure policy and reporting instructions.
 
 ## License
 
