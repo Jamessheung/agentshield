@@ -5,6 +5,7 @@
 //! credential theft, prompt injection, and known malware signatures.
 
 pub mod analyzers;
+pub mod frameworks;
 pub mod ingester;
 pub mod report;
 pub mod scoring;
@@ -32,6 +33,36 @@ pub fn scan_skill(skill_dir: &Path) -> Result<ScanReport, ScanError> {
 /// Scan raw SKILL.md content (for API/web usage without filesystem).
 pub fn scan_skill_content(name: &str, raw_text: &str) -> Result<ScanReport, ScanError> {
     let skill = ingester::parse_skill_content(raw_text)?;
+    let findings = analyzers::run_analysis(&skill);
+    let score = calculate_score(&findings);
+
+    let skill_name = if skill.frontmatter.name.is_empty() {
+        name.to_string()
+    } else {
+        skill.frontmatter.name.clone()
+    };
+
+    Ok(ScanReport {
+        skill_name,
+        score: score.total,
+        risk_level: score.category,
+        findings,
+        breakdown: score.breakdown,
+    })
+}
+
+/// Scan content from any supported framework (auto-detect or specify).
+///
+/// Supports: OpenClaw SKILL.md, LangChain @tool Python files,
+/// CrewAI agent YAML, and Dify workflow JSON.
+pub fn scan_framework_content(
+    name: &str,
+    filename: &str,
+    content: &str,
+    framework: Option<frameworks::Framework>,
+) -> Result<ScanReport, ScanError> {
+    let fw = framework.unwrap_or_else(|| frameworks::detect_framework(filename, content));
+    let skill = frameworks::normalize(fw, name, content)?;
     let findings = analyzers::run_analysis(&skill);
     let score = calculate_score(&findings);
 
