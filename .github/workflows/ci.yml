@@ -79,6 +79,9 @@ jobs:
       - name: Build
         run: cd cli && npm run build
 
+      - name: Run unit tests
+        run: cd cli && npm test
+
       - name: Integration test — malicious skill
         run: |
           output=$(node cli/dist/index.js scan tests/fixtures/malicious/clawhavoc-sample/ -f json || true)

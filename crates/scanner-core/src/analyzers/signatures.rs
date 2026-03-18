@@ -1,26 +1,10 @@
 //! Known malware signature matching and typosquatting detection.
-//! Matches skills against known malicious campaigns like ClawHavoc,
-//! and detects name similarities to popular skills (SC-002).
+//! Matches skills against known malicious campaigns loaded from YAML
+//! signature files, and detects name similarities to popular skills (SC-002).
 
 use super::{Analyzer, Finding, Severity};
 use crate::ingester::ParsedSkill;
-
-/// Known malicious publisher accounts.
-const KNOWN_MALICIOUS_PUBLISHERS: &[&str] = &["hightower6eu", "sakaen736jih"];
-
-/// Known malicious URL patterns.
-const KNOWN_MALICIOUS_URL_PATTERNS: &[&str] = &[
-    "raw.githubusercontent.com/hightower6eu/",
-    "raw.githubusercontent.com/sakaen736jih/",
-];
-
-/// Known malicious skill name patterns (prefix matches).
-const KNOWN_MALICIOUS_NAME_PREFIXES: &[&str] = &[
-    "solana-wallet",
-    "polymarket-",
-    "youtube-summarize",
-    "auto-updater",
-];
+use crate::signatures_db::SignatureDatabase;
 
 /// Popular/legitimate skill names to check typosquatting against.
 const POPULAR_SKILL_NAMES: &[&str] = &[
@@ -47,7 +31,9 @@ const POPULAR_SKILL_NAMES: &[&str] = &[
 ];
 
 /// Signature-based analyzer matching against known malware campaigns.
-pub struct SignatureAnalyzer;
+pub struct SignatureAnalyzer {
+    db: SignatureDatabase,
+}
 
 impl Default for SignatureAnalyzer {
     fn default() -> Self {
@@ -57,7 +43,9 @@ impl Default for SignatureAnalyzer {
 
 impl SignatureAnalyzer {
     pub fn new() -> Self {
-        Self
+        Self {
+            db: SignatureDatabase::load(),
+        }
     }
 }
 
@@ -70,26 +58,29 @@ impl Analyzer for SignatureAnalyzer {
         let mut findings = Vec::new();
         let name_lower = skill.frontmatter.name.to_lowercase();
 
+        let name_prefixes = self.db.malicious_name_prefixes();
+        let url_patterns = self.db.malicious_url_patterns();
+        let publishers = self.db.malicious_publishers();
+        let references = self.db.campaign_references("ClawHavoc");
+
         // SIG-001: Check skill name against known malicious name patterns
-        for prefix in KNOWN_MALICIOUS_NAME_PREFIXES {
-            if name_lower.starts_with(prefix) {
+        for prefix in &name_prefixes {
+            if name_lower.starts_with(prefix.as_str()) {
                 findings.push(Finding {
                     rule_id: "SIG-001".to_string(),
                     title: "Skill name matches known malware campaign pattern".to_string(),
                     severity: Severity::High,
                     description: format!(
                         "Skill name '{}' matches the pattern '{}*' associated with \
-                         the ClawHavoc malware campaign.",
+                         a known malware campaign.",
                         skill.frontmatter.name, prefix
                     ),
                     evidence: skill.frontmatter.name.clone(),
                     line: None,
-                    remediation: "Verify the skill publisher and contents carefully before installing."
-                        .to_string(),
-                    references: vec![
-                        "https://thehackernews.com/2026/02/researchers-find-341-malicious-clawhub.html"
+                    remediation:
+                        "Verify the skill publisher and contents carefully before installing."
                             .to_string(),
-                    ],
+                    references: references.clone(),
                 });
                 break;
             }
@@ -97,24 +88,21 @@ impl Analyzer for SignatureAnalyzer {
 
         // SIG-002: Check URLs against known malicious patterns
         for url in &skill.urls {
-            for pattern in KNOWN_MALICIOUS_URL_PATTERNS {
+            for pattern in &url_patterns {
                 if url.url.contains(pattern) {
                     findings.push(Finding {
                         rule_id: "SIG-002".to_string(),
                         title: "URL matches known malware distribution source".to_string(),
                         severity: Severity::Critical,
                         description: format!(
-                            "URL '{}' matches a known malicious distribution source \
-                             from the ClawHavoc campaign.",
+                            "URL '{}' matches a known malicious distribution source.",
                             url.url
                         ),
                         evidence: url.url.clone(),
                         line: Some(url.line),
-                        remediation: "Do not download or execute anything from this URL.".to_string(),
-                        references: vec![
-                            "https://thehackernews.com/2026/02/researchers-find-341-malicious-clawhub.html"
-                                .to_string(),
-                        ],
+                        remediation: "Do not download or execute anything from this URL."
+                            .to_string(),
+                        references: references.clone(),
                     });
                     break;
                 }
@@ -123,7 +111,7 @@ impl Analyzer for SignatureAnalyzer {
 
         // SIG-003: Check raw text for known publisher references
         let raw_lower = skill.raw_text.to_lowercase();
-        for publisher in KNOWN_MALICIOUS_PUBLISHERS {
+        for publisher in &publishers {
             if raw_lower.contains(publisher) {
                 let already_flagged = findings.iter().any(|f| f.rule_id == "SIG-002");
                 if !already_flagged {
@@ -133,16 +121,13 @@ impl Analyzer for SignatureAnalyzer {
                         severity: Severity::High,
                         description: format!(
                             "Skill references the account '{}' which is associated with \
-                             the ClawHavoc malware campaign.",
+                             a known malware campaign.",
                             publisher
                         ),
                         evidence: publisher.to_string(),
                         line: None,
                         remediation: "Do not use skills from this publisher.".to_string(),
-                        references: vec![
-                            "https://thehackernews.com/2026/02/researchers-find-341-malicious-clawhub.html"
-                                .to_string(),
-                        ],
+                        references: references.clone(),
                     });
                 }
                 break;
@@ -253,7 +238,6 @@ mod tests {
 
     #[test]
     fn test_detects_typosquat_edit_distance() {
-        // "clawhub-cIi" has edit distance 2 from "clawhub-cli" (l→I, i added)
         let findings =
             scan("---\nname: clawhub-clii\ndescription: CLI tool\nversion: \"1.0.0\"\n---\n# Test");
         assert!(
@@ -292,6 +276,18 @@ mod tests {
         assert!(
             !findings.iter().any(|f| f.rule_id == "SC-002"),
             "Dissimilar name should not trigger SC-002"
+        );
+    }
+
+    #[test]
+    fn test_findings_have_references_from_yaml() {
+        let findings = scan(
+            "---\nname: solana-wallet-tracker\ndescription: Track wallets\nversion: \"1.0.0\"\n---\n# Test",
+        );
+        let sig001 = findings.iter().find(|f| f.rule_id == "SIG-001").unwrap();
+        assert!(
+            !sig001.references.is_empty(),
+            "SIG-001 should have references loaded from YAML"
         );
     }
 }
