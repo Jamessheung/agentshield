@@ -1,0 +1,27 @@
+---
+campaign: Atomic Stealer (AMOS)
+discovered_by: Bitdefender
+date: 2026-01-15
+references:
+  - https://www.bitdefender.com/en-us/blog/labs/atomic-stealer-targeting-ai-agent-plugins
+
+indicators:
+  file_targets:
+    - "~/Library/Keychains/"
+    - "~/Library/Application Support/Google/Chrome/"
+    - "~/Library/Application Support/Firefox/"
+    - "~/Library/Application Support/com.operasoftware.Opera/"
+    - "~/Library/Application Support/BraveSoftware/"
+    - "~/Library/Cookies/"
+
+  behaviors:
+    - Downloads .dmg or .zip archive
+    - Extracts and executes binary from archive
+    - Reads browser profile directories
+    - Reads macOS Keychain
+    - Exfiltrates data via HTTP POST
+
+  payload_extensions:
+    - ".dmg"
+    - ".zip"
+    - ".pkg"
