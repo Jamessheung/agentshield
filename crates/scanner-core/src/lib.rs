@@ -7,6 +7,7 @@
 pub mod analyzers;
 pub mod frameworks;
 pub mod ingester;
+pub mod llm_analysis;
 pub mod report;
 pub mod scoring;
 pub mod signatures_db;
