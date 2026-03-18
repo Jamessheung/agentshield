@@ -7,6 +7,12 @@ use crate::ingester::ParsedSkill;
 /// Analyzer for SKILL.md frontmatter metadata.
 pub struct MetadataAnalyzer;
 
+impl Default for MetadataAnalyzer {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl MetadataAnalyzer {
     pub fn new() -> Self {
         Self

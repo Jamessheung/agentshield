@@ -1,5 +1,6 @@
-//! Known malware signature matching from YAML database.
-//! Matches skills against known malicious campaigns like ClawHavoc.
+//! Known malware signature matching and typosquatting detection.
+//! Matches skills against known malicious campaigns like ClawHavoc,
+//! and detects name similarities to popular skills (SC-002).
 
 use super::{Analyzer, Finding, Severity};
 use crate::ingester::ParsedSkill;
@@ -24,8 +25,38 @@ const KNOWN_MALICIOUS_NAME_PREFIXES: &[&str] = &[
     "auto-updater",
 ];
 
+/// Popular/legitimate skill names to check typosquatting against.
+const POPULAR_SKILL_NAMES: &[&str] = &[
+    "clawhub-cli",
+    "openclaw-tools",
+    "web-search",
+    "code-review",
+    "git-commit",
+    "file-manager",
+    "api-client",
+    "docker-manager",
+    "db-query",
+    "slack-notify",
+    "email-sender",
+    "pdf-reader",
+    "image-gen",
+    "translate",
+    "summarize",
+    "calendar",
+    "weather",
+    "calculator",
+    "note-taker",
+    "task-manager",
+];
+
 /// Signature-based analyzer matching against known malware campaigns.
 pub struct SignatureAnalyzer;
+
+impl Default for SignatureAnalyzer {
+    fn default() -> Self {
+        Self::new()
+    }
+}
 
 impl SignatureAnalyzer {
     pub fn new() -> Self {
@@ -42,7 +73,7 @@ impl Analyzer for SignatureAnalyzer {
         let mut findings = Vec::new();
         let name_lower = skill.frontmatter.name.to_lowercase();
 
-        // Check skill name against known malicious name patterns
+        // SIG-001: Check skill name against known malicious name patterns
         for prefix in KNOWN_MALICIOUS_NAME_PREFIXES {
             if name_lower.starts_with(prefix) {
                 findings.push(Finding {
@@ -67,7 +98,7 @@ impl Analyzer for SignatureAnalyzer {
             }
         }
 
-        // Check URLs against known malicious patterns
+        // SIG-002: Check URLs against known malicious patterns
         for url in &skill.urls {
             for pattern in KNOWN_MALICIOUS_URL_PATTERNS {
                 if url.url.contains(pattern) {
@@ -93,11 +124,10 @@ impl Analyzer for SignatureAnalyzer {
             }
         }
 
-        // Check raw text for known publisher references
+        // SIG-003: Check raw text for known publisher references
         let raw_lower = skill.raw_text.to_lowercase();
         for publisher in KNOWN_MALICIOUS_PUBLISHERS {
             if raw_lower.contains(publisher) {
-                // Avoid duplicate if we already flagged the URL
                 let already_flagged = findings.iter().any(|f| f.rule_id == "SIG-002");
                 if !already_flagged {
                     findings.push(Finding {
@@ -119,6 +149,66 @@ impl Analyzer for SignatureAnalyzer {
                     });
                 }
                 break;
+            }
+        }
+
+        // SC-002: Typosquatting detection using Levenshtein distance
+        if !name_lower.is_empty() {
+            for popular in POPULAR_SKILL_NAMES {
+                // Skip exact match (that's the legitimate skill)
+                if name_lower == *popular {
+                    continue;
+                }
+
+                let distance = strsim::levenshtein(&name_lower, popular);
+
+                // Flag if Levenshtein distance is 1-2 (very similar but not identical)
+                if distance > 0 && distance <= 2 {
+                    findings.push(Finding {
+                        rule_id: "SC-002".to_string(),
+                        title: "Possible typosquatting of popular skill name".to_string(),
+                        severity: Severity::High,
+                        description: format!(
+                            "Skill name '{}' is very similar to the popular skill '{}' \
+                             (edit distance: {}). This may be a typosquatting attempt.",
+                            skill.frontmatter.name, popular, distance
+                        ),
+                        evidence: format!(
+                            "'{}' vs '{}' (distance: {})",
+                            skill.frontmatter.name, popular, distance
+                        ),
+                        line: None,
+                        remediation: "Verify this is the intended skill. Check the publisher \
+                                     identity and compare with the original."
+                            .to_string(),
+                        references: vec![],
+                    });
+                    break;
+                }
+
+                // Also check for common typosquat patterns: appending -pro, -free, -plus
+                let suffixes = ["-pro", "-free", "-plus", "-official", "-latest"];
+                for suffix in &suffixes {
+                    if name_lower == format!("{}{}", popular, suffix) {
+                        findings.push(Finding {
+                            rule_id: "SC-002".to_string(),
+                            title: "Possible typosquatting of popular skill name".to_string(),
+                            severity: Severity::High,
+                            description: format!(
+                                "Skill name '{}' appends '{}' to the popular skill '{}'. \
+                                 This is a common typosquatting technique.",
+                                skill.frontmatter.name, suffix, popular
+                            ),
+                            evidence: format!("'{}' = '{}' + '{}'", skill.frontmatter.name, popular, suffix),
+                            line: None,
+                            remediation: "Verify this is the intended skill. Check the publisher \
+                                         identity and compare with the original."
+                                .to_string(),
+                            references: vec![],
+                        });
+                        break;
+                    }
+                }
             }
         }
 
@@ -159,5 +249,51 @@ mod tests {
             "---\nname: weather\ndescription: Weather lookup\nversion: \"1.0.0\"\n---\n# Weather\n\nGet weather data.",
         );
         assert!(findings.is_empty());
+    }
+
+    #[test]
+    fn test_detects_typosquat_edit_distance() {
+        // "clawhub-cIi" has edit distance 2 from "clawhub-cli" (l→I, i added)
+        let findings = scan(
+            "---\nname: clawhub-clii\ndescription: CLI tool\nversion: \"1.0.0\"\n---\n# Test",
+        );
+        assert!(
+            findings.iter().any(|f| f.rule_id == "SC-002"),
+            "Should detect typosquat of clawhub-cli, got: {:?}",
+            findings.iter().map(|f| &f.rule_id).collect::<Vec<_>>()
+        );
+    }
+
+    #[test]
+    fn test_detects_typosquat_suffix() {
+        let findings = scan(
+            "---\nname: web-search-pro\ndescription: Search the web\nversion: \"1.0.0\"\n---\n# Test",
+        );
+        assert!(
+            findings.iter().any(|f| f.rule_id == "SC-002"),
+            "Should detect -pro suffix typosquat"
+        );
+    }
+
+    #[test]
+    fn test_no_typosquat_for_exact_name() {
+        let findings = scan(
+            "---\nname: weather\ndescription: Weather\nversion: \"1.0.0\"\n---\n# Weather",
+        );
+        assert!(
+            !findings.iter().any(|f| f.rule_id == "SC-002"),
+            "Exact popular name should not trigger SC-002"
+        );
+    }
+
+    #[test]
+    fn test_no_typosquat_for_dissimilar_name() {
+        let findings = scan(
+            "---\nname: my-awesome-tool\ndescription: A tool\nversion: \"1.0.0\"\n---\n# Test",
+        );
+        assert!(
+            !findings.iter().any(|f| f.rule_id == "SC-002"),
+            "Dissimilar name should not trigger SC-002"
+        );
     }
 }

@@ -8,6 +8,12 @@ use crate::ingester::ParsedSkill;
 /// inconsistent with the skill's stated purpose.
 pub struct BehavioralAnalyzer;
 
+impl Default for BehavioralAnalyzer {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl BehavioralAnalyzer {
     pub fn new() -> Self {
         Self
