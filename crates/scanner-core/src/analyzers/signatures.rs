@@ -6,10 +6,7 @@ use super::{Analyzer, Finding, Severity};
 use crate::ingester::ParsedSkill;
 
 /// Known malicious publisher accounts.
-const KNOWN_MALICIOUS_PUBLISHERS: &[&str] = &[
-    "hightower6eu",
-    "sakaen736jih",
-];
+const KNOWN_MALICIOUS_PUBLISHERS: &[&str] = &["hightower6eu", "sakaen736jih"];
 
 /// Known malicious URL patterns.
 const KNOWN_MALICIOUS_URL_PATTERNS: &[&str] = &[
@@ -199,7 +196,10 @@ impl Analyzer for SignatureAnalyzer {
                                  This is a common typosquatting technique.",
                                 skill.frontmatter.name, suffix, popular
                             ),
-                            evidence: format!("'{}' = '{}' + '{}'", skill.frontmatter.name, popular, suffix),
+                            evidence: format!(
+                                "'{}' = '{}' + '{}'",
+                                skill.frontmatter.name, popular, suffix
+                            ),
                             line: None,
                             remediation: "Verify this is the intended skill. Check the publisher \
                                          identity and compare with the original."
@@ -254,9 +254,8 @@ mod tests {
     #[test]
     fn test_detects_typosquat_edit_distance() {
         // "clawhub-cIi" has edit distance 2 from "clawhub-cli" (l→I, i added)
-        let findings = scan(
-            "---\nname: clawhub-clii\ndescription: CLI tool\nversion: \"1.0.0\"\n---\n# Test",
-        );
+        let findings =
+            scan("---\nname: clawhub-clii\ndescription: CLI tool\nversion: \"1.0.0\"\n---\n# Test");
         assert!(
             findings.iter().any(|f| f.rule_id == "SC-002"),
             "Should detect typosquat of clawhub-cli, got: {:?}",
@@ -277,9 +276,8 @@ mod tests {
 
     #[test]
     fn test_no_typosquat_for_exact_name() {
-        let findings = scan(
-            "---\nname: weather\ndescription: Weather\nversion: \"1.0.0\"\n---\n# Weather",
-        );
+        let findings =
+            scan("---\nname: weather\ndescription: Weather\nversion: \"1.0.0\"\n---\n# Weather");
         assert!(
             !findings.iter().any(|f| f.rule_id == "SC-002"),
             "Exact popular name should not trigger SC-002"
