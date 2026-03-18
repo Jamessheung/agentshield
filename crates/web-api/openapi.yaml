@@ -1,0 +1,376 @@
+openapi: 3.0.3
+info:
+  title: AgentShield Web API
+  description: |
+    HTTP API for scanning AI agent skills (OpenClaw SKILL.md, LangChain tools,
+    CrewAI agents, Dify workflows) for security vulnerabilities.
+  version: 0.1.0
+  license:
+    name: MIT
+    url: https://opensource.org/licenses/MIT
+
+servers:
+  - url: http://localhost:8080
+    description: Local development
+
+paths:
+  /api/v1/health:
+    get:
+      summary: Health check
+      operationId: health
+      tags: [System]
+      responses:
+        '200':
+          description: Service is healthy
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  status:
+                    type: string
+                    example: ok
+                  version:
+                    type: string
+                    example: "0.1.0"
+
+  /api/v1/rules:
+    get:
+      summary: List all detection rules
+      operationId: listRules
+      tags: [System]
+      responses:
+        '200':
+          description: Array of detection rules
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/Rule'
+
+  /api/v1/scan:
+    post:
+      summary: Scan a single skill
+      operationId: scanSkill
+      tags: [Scanning]
+      description: |
+        Scan a single skill's content for security vulnerabilities.
+        Rate limited to 60 requests per minute per IP.
+        Maximum request body size: 2 MB.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ScanRequest'
+      responses:
+        '200':
+          description: Scan results
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ScanResponse'
+            application/sarif+json:
+              schema:
+                description: SARIF 2.1.0 report (when format=sarif)
+                type: object
+        '400':
+          description: Invalid request (missing content, parse error)
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '429':
+          description: Rate limit exceeded
+
+  /api/v1/scan/batch:
+    post:
+      summary: Batch scan multiple skills
+      operationId: batchScan
+      tags: [Scanning]
+      description: |
+        Scan up to 500 skills in a single request.
+        Rate limited to 10 requests per minute per IP.
+        Maximum request body size: 10 MB.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/BatchScanRequest'
+      responses:
+        '200':
+          description: Batch scan results
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/BatchScanResponse'
+        '400':
+          description: Invalid request or exceeded 500 skill limit
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '429':
+          description: Rate limit exceeded
+
+  /api/v1/llm/prompt:
+    post:
+      summary: Generate LLM analysis prompt
+      operationId: llmPrompt
+      tags: [LLM Analysis]
+      description: |
+        Generate a structured prompt for sending to an LLM for deeper
+        behavioral analysis. Also returns static analysis results so the
+        caller can decide whether an LLM call is worthwhile.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/LlmPromptRequest'
+      responses:
+        '200':
+          description: LLM prompt and static analysis
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/LlmPromptResponse'
+        '400':
+          description: Invalid request
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+
+  /api/v1/llm/result:
+    post:
+      summary: Parse LLM analysis response
+      operationId: llmResult
+      tags: [LLM Analysis]
+      description: |
+        Parse a raw LLM JSON response into structured AgentShield findings.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [llm_response]
+              properties:
+                llm_response:
+                  type: string
+                  description: Raw JSON string from the LLM
+      responses:
+        '200':
+          description: Parsed LLM findings
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  findings:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/Finding'
+                  summary:
+                    type: string
+        '400':
+          description: Invalid or unparseable LLM response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+
+components:
+  schemas:
+    ScanRequest:
+      type: object
+      required: [content]
+      properties:
+        name:
+          type: string
+          description: Skill name (optional, used in report)
+          example: weather-tool
+        content:
+          type: string
+          description: Raw SKILL.md or tool source content
+        format:
+          type: string
+          enum: [json, sarif]
+          default: json
+          description: Output format
+        framework:
+          type: string
+          enum: [openclaw, langchain, crewai, dify, auto]
+          description: Framework type (auto-detected if omitted)
+        filename:
+          type: string
+          description: Filename hint for auto-detection
+          example: tools.py
+
+    ScanResponse:
+      type: object
+      properties:
+        skill_name:
+          type: string
+        score:
+          type: integer
+          minimum: 0
+          maximum: 100
+          description: Risk score (0 = clean, 100 = maximum risk)
+        risk_level:
+          type: string
+          enum: [Clean, Low, Medium, High, Critical]
+        findings:
+          type: array
+          items:
+            $ref: '#/components/schemas/Finding'
+        breakdown:
+          $ref: '#/components/schemas/Breakdown'
+        scan_duration_ms:
+          type: integer
+          description: Scan time in milliseconds
+
+    Finding:
+      type: object
+      properties:
+        rule_id:
+          type: string
+          example: CE-001
+        title:
+          type: string
+        severity:
+          type: string
+          enum: [Critical, High, Medium, Low, Info]
+        description:
+          type: string
+        evidence:
+          type: string
+          description: Matched text snippet
+        line:
+          type: integer
+          nullable: true
+          description: Line number in source (if available)
+        remediation:
+          type: string
+
+    Breakdown:
+      type: object
+      properties:
+        critical_count:
+          type: integer
+        high_count:
+          type: integer
+        medium_count:
+          type: integer
+        low_count:
+          type: integer
+        info_count:
+          type: integer
+
+    BatchScanRequest:
+      type: object
+      required: [skills]
+      properties:
+        skills:
+          type: array
+          maxItems: 500
+          items:
+            type: object
+            required: [content]
+            properties:
+              name:
+                type: string
+              content:
+                type: string
+              framework:
+                type: string
+                enum: [openclaw, langchain, crewai, dify, auto]
+              filename:
+                type: string
+
+    BatchScanResponse:
+      type: object
+      properties:
+        total:
+          type: integer
+        results:
+          type: array
+          items:
+            type: object
+            properties:
+              skill_name:
+                type: string
+              score:
+                type: integer
+              risk_level:
+                type: string
+              finding_count:
+                type: integer
+              error:
+                type: string
+                nullable: true
+        summary:
+          type: object
+          properties:
+            clean:
+              type: integer
+            low_risk:
+              type: integer
+            medium_risk:
+              type: integer
+            high_risk:
+              type: integer
+            critical_risk:
+              type: integer
+        scan_duration_ms:
+          type: integer
+
+    LlmPromptRequest:
+      type: object
+      required: [content]
+      properties:
+        name:
+          type: string
+        content:
+          type: string
+        framework:
+          type: string
+          enum: [openclaw, langchain, crewai, dify, auto]
+        filename:
+          type: string
+
+    LlmPromptResponse:
+      type: object
+      properties:
+        system:
+          type: string
+          description: System prompt for the LLM
+        user:
+          type: string
+          description: User message containing the skill to analyze
+        static_report:
+          $ref: '#/components/schemas/ScanResponse'
+
+    Rule:
+      type: object
+      properties:
+        id:
+          type: string
+          example: CE-001
+        category:
+          type: string
+          example: Code Execution
+        severity:
+          type: string
+          example: Critical
+        description:
+          type: string
+
+    Error:
+      type: object
+      properties:
+        error:
+          type: string
