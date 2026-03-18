@@ -149,13 +149,45 @@ docker build -t agentshield-web .
 docker run -p 8080:8080 agentshield-web
 ```
 
-Scan via HTTP:
+### API Endpoints
+
+**POST /api/v1/scan** — Scan a single skill
 
 ```bash
 curl -X POST http://localhost:8080/api/v1/scan \
   -H 'Content-Type: application/json' \
   -d '{"content": "---\nname: test\n---\n# Test"}'
 ```
+
+**POST /api/v1/scan/batch** — Batch scan multiple skills
+
+```bash
+curl -X POST http://localhost:8080/api/v1/scan/batch \
+  -H 'Content-Type: application/json' \
+  -d '{"skills": [{"name": "a", "content": "..."}, {"name": "b", "content": "..."}]}'
+```
+
+**POST /api/v1/llm/prompt** — Generate LLM analysis prompt for a skill
+
+```bash
+curl -X POST http://localhost:8080/api/v1/llm/prompt \
+  -H 'Content-Type: application/json' \
+  -d '{"content": "---\nname: test\n---\n# Test"}'
+```
+
+Returns `{ system, user, static_report }` — send `system` + `user` to your LLM, then parse the response with `/api/v1/llm/result`.
+
+**POST /api/v1/llm/result** — Parse LLM response into findings
+
+```bash
+curl -X POST http://localhost:8080/api/v1/llm/result \
+  -H 'Content-Type: application/json' \
+  -d '{"llm_response": "{\"risk_assessment\": \"clean\", ...}"}'
+```
+
+**GET /api/v1/rules** — List all detection rules
+
+**GET /api/v1/health** — Health check
 
 ## Roadmap
 
@@ -165,9 +197,9 @@ curl -X POST http://localhost:8080/api/v1/scan \
 - [x] GitHub Actions integration
 - [x] Multi-framework support (LangChain, CrewAI, Dify)
 - [x] Web API server
-- [ ] ClawHub full registry audit
+- [x] ClawHub full registry audit
 - [ ] Web scanner (agentshield.dev)
-- [ ] LLM-assisted behavioral analysis
+- [x] LLM-assisted behavioral analysis
 
 ## Security
 
