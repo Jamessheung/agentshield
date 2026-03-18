@@ -1,0 +1,82 @@
+name: 'AgentShield Scan'
+description: 'Scan OpenClaw skills for security issues in CI/CD pipelines'
+branding:
+  icon: 'shield'
+  color: 'blue'
+
+inputs:
+  path:
+    description: 'Path to the skill directory to scan'
+    required: true
+    default: '.'
+  format:
+    description: 'Output format: terminal, json, sarif'
+    required: false
+    default: 'terminal'
+  fail-on-high:
+    description: 'Fail the action if risk score exceeds this threshold (0-100)'
+    required: false
+    default: '50'
+
+outputs:
+  score:
+    description: 'Risk score (0-100)'
+    value: ${{ steps.scan.outputs.score }}
+  risk-level:
+    description: 'Risk level (Clean/Low/Medium/High/Critical)'
+    value: ${{ steps.scan.outputs.risk_level }}
+  findings-count:
+    description: 'Number of findings'
+    value: ${{ steps.scan.outputs.findings_count }}
+
+runs:
+  using: 'composite'
+  steps:
+    - name: Setup Node.js
+      uses: actions/setup-node@v4
+      with:
+        node-version: '20'
+
+    - name: Install AgentShield
+      shell: bash
+      run: npm install -g agentshield
+
+    - name: Run scan
+      id: scan
+      shell: bash
+      run: |
+        set +e
+        OUTPUT=$(agentshield scan "${{ inputs.path }}" --format json 2>&1)
+        EXIT_CODE=$?
+        set -e
+
+        # Extract metrics from JSON output
+        SCORE=$(echo "$OUTPUT" | grep -o '"score":[0-9]*' | head -1 | cut -d: -f2)
+        RISK_LEVEL=$(echo "$OUTPUT" | grep -o '"risk_level":"[^"]*"' | head -1 | cut -d'"' -f4)
+        FINDINGS_COUNT=$(echo "$OUTPUT" | grep -o '"findings":\[' | head -1)
+
+        # Count findings by counting rule_id occurrences
+        FINDINGS_NUM=$(echo "$OUTPUT" | grep -o '"rule_id"' | wc -l)
+
+        echo "score=${SCORE:-0}" >> $GITHUB_OUTPUT
+        echo "risk_level=${RISK_LEVEL:-Unknown}" >> $GITHUB_OUTPUT
+        echo "findings_count=${FINDINGS_NUM:-0}" >> $GITHUB_OUTPUT
+
+        # Display the report
+        if [ "${{ inputs.format }}" = "terminal" ]; then
+          agentshield scan "${{ inputs.path }}" --format terminal || true
+        else
+          echo "$OUTPUT"
+        fi
+
+        # Write SARIF if requested
+        if [ "${{ inputs.format }}" = "sarif" ]; then
+          agentshield scan "${{ inputs.path }}" --format sarif > agentshield-results.sarif || true
+        fi
+
+        # Check threshold
+        THRESHOLD=${{ inputs.fail-on-high }}
+        if [ "${SCORE:-0}" -gt "${THRESHOLD}" ]; then
+          echo "::error::AgentShield scan failed: risk score ${SCORE} exceeds threshold ${THRESHOLD}"
+          exit 1
+        fi
